@@ -36,7 +36,7 @@ pub mod dtyp;
 pub mod errors;
 pub mod fun;
 pub mod info;
-mod instance;
+pub mod instance;
 pub mod learning;
 pub mod parse;
 pub mod preproc;
