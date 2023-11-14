@@ -1216,7 +1216,9 @@ impl Config {
         app = TeacherConf::add_args(app, &mut 500);
         app = Self::add_check_args(app, 600);
 
-        let matches = app.get_matches();
+        //let matches = app.get_matches();
+        let i: std::iter::Empty<std::ffi::OsString> = std::iter::empty();
+        let matches = app.get_matches_from(i);
 
         // Input file.
         let file = matches.value_of("input file").map(|s| s.to_string());
