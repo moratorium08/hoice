@@ -69,6 +69,7 @@
     (srt_pst lst false)
   )
 ) )
+
 ; Recursive case.
 (assert
   (forall ( (lst (Lst Int)) (res Bool) )

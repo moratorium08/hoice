@@ -438,6 +438,7 @@ impl<'a> PreInstance<'a> {
             log! { @3 "trivial?" }
             // Since Z3' timeout is not working, we skip the triviality check.
             // self.is_clause_trivial(clause)
+            Ok(false)
         } else {
             Ok(false)
         }

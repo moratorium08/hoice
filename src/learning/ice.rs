@@ -1315,6 +1315,7 @@ impl<'core> IceLearner<'core> {
         best: &mut Option<(Term, f64)>,
         simple: bool,
     ) -> Res<Option<()>> {
+        pause("hello", &self._profiler);
         scoped! {
           let self_data = & self.data ;
           let quals = & mut self.qualifiers ;

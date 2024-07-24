@@ -434,7 +434,7 @@ impl<'a> Reductor<'a> {
                 break;
             }
 
-            let changed = run! { fun_preds };
+            // let changed = run! { fun_preds };
 
             if changed {
                 changed_since_cfg_red = true;

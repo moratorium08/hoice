@@ -30,6 +30,7 @@
 
 #[macro_use]
 pub mod common;
+pub mod absadt;
 pub mod check;
 pub mod data;
 pub mod dtyp;
@@ -217,7 +218,8 @@ pub fn read_and_work<R: ::std::io::Read>(
                         maybe_model.into_option()
                     } else {
                         let arc_instance = Arc::new(instance);
-                        let solve_res = split::work(&arc_instance, &profiler);
+
+                        let solve_res = absadt::work(&arc_instance, &profiler);
 
                         instance = unwrap_arc(arc_instance)
                             .chain_err(|| "while trying to recover instance")?;
