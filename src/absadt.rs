@@ -92,9 +92,70 @@ impl AbsADTConf {
 ///
 /// [`UnsatRes`]: ../unsat_core/enum.UnsatRes.html (UnsatRes struct)
 pub fn work(
-    real_instance: &Arc<Instance>,
+    instance: &Arc<Instance>,
     _profiler: &Profiler,
 ) -> Res<Option<Either<ConjCandidates, UnsatRes>>> {
     println!("hello");
+    let cls = instance.clauses();
+    let c = cls.iter().next().unwrap();
+
+    let adtconf = AbsADTConf::new(instance)?;
+    let mut file = adtconf.instance_log_files("hoge")?;
+
+    instance.dump_as_smt2(&mut file, "hoge").unwrap();
+
+    // ~~~playground~~~
+    let decs = dtyp::get_all();
+    assert!(!decs.is_empty(), "no ADT is defined");
+
+    // dtype name: Lst
+    // RDTyp {
+    //     name: "Lst",
+    //     deps: [],
+    //     prms: TPrmMap {
+    //         vec: [
+    //             "T",
+    //         ],
+    //     },
+    //     news: {
+    //         "cons": [
+    //             (
+    //                 "head",
+    //                 Param(
+    //                     TPrmIdx {
+    //                         val: 0,
+    //                     },
+    //                 ),
+    //             ),
+    //             (
+    //                 "tail",
+    //                 DTyp(
+    //                     "Lst",
+    //                     Pos(
+    //                         79,
+    //                     ),
+    //                     TPrmMap {
+    //                         vec: [
+    //                             Param(
+    //                                 TPrmIdx {
+    //                                     val: 0,
+    //                                 },
+    //                             ),
+    //                         ],
+    //                     },
+    //                 ),
+    //             ),
+    //         ],
+    //         "nil": [],
+    //     },
+    //     default: "nil",
+    // }
+    for (name, dtyp) in decs.iter() {
+        println!("dtype name: {}\n{:#?}", name, dtyp);
+    }
+
+    let ty = dtyp::of_constructor("nil").unwrap();
+    println!("ty: {}", ty.name);
+
     unimplemented!();
 }
