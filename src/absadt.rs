@@ -45,15 +45,24 @@ pub struct AbsADTConf {
     /// Original CHC Instance over LIA + ADT
     instance: Arc<Instance>,
     log_dir: PathBuf,
+    encs: BTreeMap<Typ, Enc>,
 }
 
 pub struct Approx {
-    /// Number of parameters for approximation
-    pub n_params: usize,
     /// Definition of the arguments
-    pub args: VarInfos, // TBD
+    pub args: VarInfos,
     /// n terms for approximation
-    pub terms: Vec<Term>, // TBD (usize will be replaced with an appropriate type)
+    pub terms: Vec<Term>,
+}
+
+/// Enc is an encoding of ADT terms to integer expressions.
+///
+/// Assumption: typ is a monomorphic type.
+pub struct Enc {
+    /// Number of parameters for approximation
+    pub typ: Typ,
+    pub n_params: usize,
+    pub approxs: BTreeMap<String, Approx>,
 }
 
 impl AbsADTConf {
@@ -64,7 +73,11 @@ impl AbsADTConf {
         mk_dir(&log_dir)?;
 
         let instance = instance.clone();
-        Ok(AbsADTConf { instance, log_dir })
+        Ok(AbsADTConf {
+            instance,
+            log_dir,
+            encs: BTreeMap::new(),
+        })
     }
 
     fn instance_log_files<S: AsRef<str>>(&self, name: S) -> Res<::std::fs::File> {
@@ -166,6 +179,10 @@ pub fn work(
     let idx = dtyp::TPrmIdx::from(0);
     let ty = &ty.prms[idx];
     println!("ty: {}", ty);
+
+    // generate a new instance
+    let mut instance = Instance::new();
+    instance.dump_as_smt2(&mut file, "no_def").unwrap();
 
     unimplemented!();
 }
