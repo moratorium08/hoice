@@ -41,12 +41,19 @@ use crate::common::*;
 use crate::unsat_core::UnsatRes;
 use std::path::PathBuf;
 
-fn save_for_debug(instance: &Arc<Instance>) {}
-
 pub struct AbsADTConf {
     /// Original CHC Instance over LIA + ADT
     instance: Arc<Instance>,
     log_dir: PathBuf,
+}
+
+pub struct Approx {
+    /// Number of parameters for approximation
+    pub n_params: usize,
+    /// Definition of the arguments
+    pub args: VarInfos, // TBD
+    /// n terms for approximation
+    pub terms: Vec<Term>, // TBD (usize will be replaced with an appropriate type)
 }
 
 impl AbsADTConf {
@@ -156,6 +163,9 @@ pub fn work(
 
     let ty = dtyp::of_constructor("nil").unwrap();
     println!("ty: {}", ty.name);
+    let idx = dtyp::TPrmIdx::from(0);
+    let ty = &ty.prms[idx];
+    println!("ty: {}", ty);
 
     unimplemented!();
 }
