@@ -38,6 +38,7 @@
 //! - set of ADT does not change from start to end during `work`
 //!   - they are defined as the global hashconsed objects
 use crate::common::*;
+use crate::info::{Pred, VarInfo};
 use crate::unsat_core::UnsatRes;
 use std::path::PathBuf;
 
@@ -180,9 +181,63 @@ pub fn work(
     let ty = &ty.prms[idx];
     println!("ty: {}", ty);
 
-    // generate a new instance
-    let mut instance = Instance::new();
-    instance.dump_as_smt2(&mut file, "no_def").unwrap();
+    for c in instance.clauses().into_iter() {
+        println!("clause: {:#?}", c.vars);
+    }
 
+    // generate a new instance
+    // P(0)
+    // P(x + 1) => P(x)
+    // P(x) => x <= 0
+
+    let mut instance = Instance::new();
+
+    let mut vars = VarInfos::new();
+    let x = vars.next_index();
+    let info = VarInfo::new("x", typ::int(), x);
+    vars.push(info);
+
+    let mut sig = VarMap::new();
+    sig.push(typ::int());
+
+    let p = instance.push_pred("P", sig);
+
+    let zerot = term::cst(val::int(0));
+    let xt = term::var(x, typ::int());
+    let x1t = term::add(vec![xt.clone(), term::cst(val::int(1))]);
+
+    // P(0)
+    let mut a1 = VarMap::new();
+    a1.push(x1t.clone());
+    instance.push_new_clause(vars.clone(), vec![], Some((p, a1.into())), "P(0)")?;
+
+    // P(x + 1) => P(x)
+    let mut a2 = VarMap::new();
+    a2.push(x1t.clone());
+    let t1 = term::TTerm::P {
+        pred: p,
+        args: a2.into(),
+    };
+
+    let mut a3 = VarMap::new();
+    a3.push(xt.clone());
+    instance.push_new_clause(
+        vars.clone(),
+        vec![t1.into()],
+        Some((p, a3.clone().into())),
+        "P(x+1) => P(x)",
+    )?;
+
+    // P(x) => x <= 0
+    let mut a2 = VarMap::new();
+    a2.push(xt.clone());
+    let t3 = term::TTerm::T(term::gt(xt.clone(), zerot.clone()));
+    let t4 = term::TTerm::P {
+        pred: p,
+        args: a3.into(),
+    };
+    instance.push_new_clause(vars.clone(), vec![t3, t4], None, "P(x) => x <= 0")?;
+
+    instance.dump_as_smt2(&mut file, "no_def").unwrap();
     unimplemented!();
 }
