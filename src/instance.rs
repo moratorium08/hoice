@@ -1144,10 +1144,16 @@ impl Instance {
     }
 
     /// Dumps the instance as an SMT-LIB 2 problem.
-    pub fn dump_as_smt2<File, Blah>(&self, w: &mut File, blah: Blah) -> Res<()>
+    pub fn dump_as_smt2<File, Blah, Option>(
+        &self,
+        w: &mut File,
+        blah: Blah,
+        options: Option,
+    ) -> Res<()>
     where
         File: Write,
         Blah: AsRef<str>,
+        Option: AsRef<str>,
     {
         let blah = blah.as_ref();
 
@@ -1156,6 +1162,12 @@ impl Instance {
         }
         writeln!(w)?;
         writeln!(w, "(set-logic HORN)")?;
+        writeln!(w)?;
+
+        let option = options.as_ref();
+        if option != "" {
+            writeln!(w, "{}", option)?
+        }
         writeln!(w)?;
 
         writeln!(w, "; Datatypes")?;

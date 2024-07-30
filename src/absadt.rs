@@ -126,7 +126,7 @@ pub fn work(
     let adtconf = AbsADTConf::new(instance)?;
     let mut file = adtconf.instance_log_files("hoge")?;
 
-    instance.dump_as_smt2(&mut file, "hoge").unwrap();
+    instance.dump_as_smt2(&mut file, "hoge", "").unwrap();
 
     // ~~~playground~~~
     let decs = dtyp::get_all();
@@ -241,7 +241,7 @@ pub fn work(
     };
     instance.push_new_clause(vars.clone(), vec![t3, t4], None, "P(x) => x <= 0")?;
 
-    instance.dump_as_smt2(&mut file, "no_def").unwrap();
+    instance.dump_as_smt2(&mut file, "no_def", "").unwrap();
 
     spacer::run_spacer(&instance)?;
     unimplemented!();

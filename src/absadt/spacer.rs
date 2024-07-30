@@ -27,6 +27,7 @@ const OPTION: [&str; 12] = [
 
 pub struct Spacer {
     child: std::process::Child,
+    stdin: std::process::ChildStdin,
     stdout: BufReader<std::process::ChildStdout>,
 }
 impl Drop for Spacer {
@@ -37,7 +38,6 @@ impl Drop for Spacer {
 
 impl Spacer {
     fn new() -> Res<Spacer> {
-        let cmd = "z3";
         let mut args = OPTION.to_vec();
         args.push("-in");
         let mut child = Command::new("z3")
@@ -45,22 +45,33 @@ impl Spacer {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()?;
+        let stdin = child.stdin.take().expect("no stdin");
         let stdout = child.stdout.take().expect("no stdout");
         let mut stdout = BufReader::new(stdout);
-        Ok(Spacer { child, stdout })
+        Ok(Spacer {
+            child,
+            stdin,
+            stdout,
+        })
     }
-    fn stdin(&mut self) -> &mut std::process::ChildStdin {
-        self.child.stdin.as_mut().expect("no stdin")
+    fn write_all<S>(&mut self, s: S) -> Res<()>
+    where
+        S: AsRef<[u8]>,
+    {
+        let s = s.as_ref();
+        self.stdin.write_all(s)?;
+        Ok(())
     }
+    fn newline(&mut self) -> Res<()> {
+        self.write_all(b"\n")
+    }
+
     fn dump_instance(&mut self, instance: &Instance) -> Res<()> {
-        let mut stdin = self.stdin();
-        stdin.write_all(b"(set-logic HORN)\n")?;
+        let options = "(set-option :produce-proofs true)\n(set-option :pp.pretty_proof true)\n(set-option :produce-unsat-cores true)";
+        instance.dump_as_smt2(&mut self.stdin, "", options)?;
         Ok(())
     }
     fn check_sat(&mut self) -> Res<bool> {
-        let mut stdin = self.stdin();
-        stdin.write_all(b"(check-sat)\n")?;
-
         let mut line = String::new();
         self.stdout.read_line(&mut line)?;
         if line.starts_with("sat") {
@@ -72,17 +83,15 @@ impl Spacer {
         }
     }
     fn get_proof(&mut self) -> Res<ResolutionProof> {
-        let mut stdin = self.stdin();
-        stdin.write_all(b"(get-proof)\n")?;
-        stdin.write_all(b"(exit)\n")?;
+        self.write_all(b"(get-proof)\n")?;
+        self.write_all(b"(exit)\n")?;
         let mut output = String::new();
         self.stdout.read_to_string(&mut output)?;
         parse_proof(&output)
     }
     fn get_model(&mut self) -> Res<CHCModel> {
-        let mut stdin = self.stdin();
-        stdin.write_all(b"(get-model)\n")?;
-        stdin.write_all(b"(exit)\n")?;
+        self.write_all(b"(get-model)\n")?;
+        self.write_all(b"(exit)\n")?;
         let mut output = String::new();
         self.stdout.read_to_string(&mut output)?;
         parse_model(&output)
@@ -91,7 +100,8 @@ impl Spacer {
 
 pub struct ResolutionProof {}
 
-fn parse_proof(_output: &str) -> Res<ResolutionProof> {
+fn parse_proof(output: &str) -> Res<ResolutionProof> {
+    println!("proof: {output}");
     unimplemented!()
 }
 
@@ -108,7 +118,13 @@ pub fn run_spacer(instance: &Instance) -> Res<either::Either<(), ResolutionProof
     let is_sat = spacer.check_sat()?;
     println!("{}", is_sat);
 
-    unimplemented!()
+    if is_sat {
+        let model = spacer.get_model()?;
+        Ok(either::Left(()))
+    } else {
+        let proof = spacer.get_proof()?;
+        Ok(either::Right(proof))
+    }
 }
 
 fn solve_instance(instance: &Arc<Instance>, _profiler: &Profiler) -> Res<()> {

@@ -405,7 +405,7 @@ macro_rules! try_val {
 macro_rules! preproc_dump {
     ($instance:expr => $file:expr, $blah:expr) => {
         if let Some(mut file) = conf.preproc.instance_log_file($file, &$instance)? {
-            $instance.dump_as_smt2(&mut file, $blah)
+            $instance.dump_as_smt2(&mut file, $blah, "")
         } else {
             Ok(())
         }
