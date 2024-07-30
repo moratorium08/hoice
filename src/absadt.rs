@@ -42,6 +42,9 @@ use crate::info::{Pred, VarInfo};
 use crate::unsat_core::UnsatRes;
 use std::path::PathBuf;
 
+mod exec_chc;
+mod spacer;
+
 pub struct AbsADTConf {
     /// Original CHC Instance over LIA + ADT
     instance: Arc<Instance>,
@@ -239,5 +242,7 @@ pub fn work(
     instance.push_new_clause(vars.clone(), vec![t3, t4], None, "P(x) => x <= 0")?;
 
     instance.dump_as_smt2(&mut file, "no_def").unwrap();
+
+    spacer::run_spacer(&instance)?;
     unimplemented!();
 }
