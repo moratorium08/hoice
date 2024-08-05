@@ -105,6 +105,59 @@ impl AbsADTConf {
     }
 }
 
+fn walk_res(
+    instance: &Arc<Instance>,
+    n: &hyper_res::Node,
+    cur: ClsIdx,
+    res: &hyper_res::ResolutionProof,
+) -> Res<term::Term> {
+    let c = &instance[cur];
+    let (p, args) = c.rhs().ok_or("err")?;
+    let name = &instance.preds()[p].name;
+    assert_eq!(name, &n.head);
+
+    unimplemented!()
+}
+
+fn get_cex(
+    instance: &Instance,
+    res: hyper_res::ResolutionProof,
+    _profiler: &Profiler,
+) -> Res<term::Term> {
+    let mut v: Vec<_> = res.get_roots().collect();
+    assert!(v.len() == 1);
+    let n = v.pop().unwrap();
+    println!("{}", n.head);
+    println!("{:?}", n.arguments);
+
+    //for child in n.children.iter() {
+    //    let n = res.get_node(n)?;
+    //    let c = walk_res(instance, n, )
+    //    println!("{}", c.head);
+    //    println!("{:?}", c.arguments);
+    //}
+    unimplemented!()
+}
+
+fn encode_tag(instance: &Instance, _profiler: &Profiler) -> Res<Instance> {
+    let mut new_instance = instance.clone();
+    for (clsidx, _) in instance.clauses().index_iter() {
+        let name = format!("tag!{}", clsidx);
+        let sig = VarMap::new();
+        let prdidx = new_instance.push_pred(name, sig);
+        let vars = VarMap::new();
+        new_instance.push_new_clause(vars, Vec::new(), Some((prdidx, VarMap::new().into())), "")?;
+        new_instance[clsidx].insert_pred_app(prdidx, VarMap::new().into());
+    }
+    Ok(new_instance)
+}
+
+pub struct CallTree {}
+
+fn decode_tag(res: &hyper_res::ResolutionProof) -> Res<CallTree> {
+    unimplemented!()
+}
+
 /// Abstract ADT terms with integer expressions, and solve the instance by an external solver.
 ///
 /// Returns
@@ -206,13 +259,15 @@ pub fn work(
 
     let p = instance.push_pred("P", sig);
 
+    let minus2 = term::cst(val::int(-2));
     let zerot = term::cst(val::int(0));
     let xt = term::var(x, typ::int());
     let x1t = term::add(vec![xt.clone(), term::cst(val::int(1))]);
+    let x2t = term::add(vec![xt.clone(), term::cst(val::int(2))]);
 
     // P(0)
     let mut a1 = VarMap::new();
-    a1.push(x1t.clone());
+    a1.push(zerot.clone());
     instance.push_new_clause(vars.clone(), vec![], Some((p, a1.into())), "P(0)")?;
 
     // P(x + 1) => P(x)
@@ -232,10 +287,27 @@ pub fn work(
         "P(x+1) => P(x)",
     )?;
 
-    // P(x) => x <= 0
+    // P(x + 2) => P(x)
+    let mut a2 = VarMap::new();
+    a2.push(x2t.clone());
+    let t1 = term::TTerm::P {
+        pred: p,
+        args: a2.into(),
+    };
+
+    let mut a3 = VarMap::new();
+    a3.push(xt.clone());
+    instance.push_new_clause(
+        vars.clone(),
+        vec![t1.into()],
+        Some((p, a3.clone().into())),
+        "P(x+2) => P(x)",
+    )?;
+
+    // P(x) => x <= -2
     let mut a2 = VarMap::new();
     a2.push(xt.clone());
-    let t3 = term::TTerm::T(term::gt(xt.clone(), zerot.clone()));
+    let t3 = term::TTerm::T(term::lt(xt.clone(), minus2.clone()));
     let t4 = term::TTerm::P {
         pred: p,
         args: a3.into(),
@@ -244,7 +316,16 @@ pub fn work(
 
     instance.dump_as_smt2(&mut file, "no_def", "").unwrap();
 
-    spacer::run_spacer(&instance)?;
+    let encoded_instance = encode_tag(&instance, _profiler)?;
+
+    let rp = match spacer::run_spacer(&encoded_instance)? {
+        either::Right(rp) => rp,
+        either::Left(_) => {
+            panic!("sat")
+        }
+    };
+
+    let cex = get_cex(&instance, rp, _profiler);
 
     unimplemented!();
 }
