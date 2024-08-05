@@ -4,14 +4,19 @@
 //! unsat-core. This module is intended to be temporary; we should move the
 //! functionality to rsmt2 or some other place.
 
+use crate::absadt::hyper_res;
 use crate::common::*;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 
-const OPTION: [&str; 12] = [
+const OPTION: [&str; 14] = [
     // Disable inlining for obtaining resolution proofs appropriately
+    // see https://github.com/Z3Prover/z3/issues/2430#issuecomment-514351694
+    // and https://github.com/Z3Prover/z3/issues/6848
+    "fp.xform.slice=true",
     "fp.xform.inline_linear=false",
     "fp.xform.inline_eager=false",
+    "fp.xform.subsumption_checker=false",
     // Spacer configuration taken from CHC-COMP
     "fp.xform.tail_simplifier_pve=false",
     "fp.validate=true",
@@ -82,7 +87,7 @@ impl Spacer {
             bail!("Unexpected output: {}", line)
         }
     }
-    fn get_proof(&mut self) -> Res<ResolutionProof> {
+    fn get_proof(&mut self) -> Res<hyper_res::ResolutionProof> {
         self.write_all(b"(get-proof)\n")?;
         self.write_all(b"(exit)\n")?;
         let mut output = String::new();
@@ -98,11 +103,10 @@ impl Spacer {
     }
 }
 
-pub struct ResolutionProof {}
-
-fn parse_proof(output: &str) -> Res<ResolutionProof> {
+fn parse_proof(output: &str) -> Res<hyper_res::ResolutionProof> {
     println!("proof: {output}");
-    unimplemented!()
+    let mut p = hyper_res::HyperResolutionParser::new();
+    p.parse_spacer(output)
 }
 
 pub struct CHCModel {}
@@ -111,9 +115,9 @@ fn parse_model(_output: &str) -> Res<CHCModel> {
     unimplemented!()
 }
 
-pub fn run_spacer(instance: &Instance) -> Res<either::Either<(), ResolutionProof>> {
+pub fn run_spacer(instance: &Instance) -> Res<either::Either<(), hyper_res::ResolutionProof>> {
     let mut spacer = Spacer::new()?;
-    spacer.dump_instance(instance);
+    spacer.dump_instance(instance)?;
 
     let is_sat = spacer.check_sat()?;
     println!("{}", is_sat);

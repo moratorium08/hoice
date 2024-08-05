@@ -10,35 +10,65 @@ use std::collections::HashMap;
 
 type ID = usize;
 
-pub struct Node {
-    id: VarIdx,
-    head: term::Term,
-    children: Vec<VarIdx>,
+#[derive(Copy, Clone, Debug)]
+pub enum V {
+    Int(i64),
 }
 
-pub struct Graph {
-    nodes: VarMap<Node>,
-}
-
-impl Graph {
-    pub fn new() -> Self {
-        Self {
-            nodes: VarMap::new(),
+impl std::fmt::Display for V {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            V::Int(n) => write!(f, "I({})", n),
         }
     }
 }
 
-type ResolutionProof = Box<Node>;
+pub struct Node {
+    id: ID,
+    head: String,
+    arguments: Vec<V>,
+    children: Vec<ID>,
+}
+
+impl Node {
+    pub fn new(id: ID, head: String, arguments: Vec<V>, children: Vec<ID>) -> Self {
+        Self {
+            id,
+            head,
+            arguments,
+            children,
+        }
+    }
+}
+
+pub type ResolutionProof = Vec<Node>;
 
 pub struct HyperResolutionParser<'a> {
-    env: HashMap<&'a str, &'a Value>,
+    env: HashMap<&'a str, Value>,
+    cache: Vec<(Value, usize)>,
+    counter: usize,
 }
 
 impl<'a> HyperResolutionParser<'a> {
     pub fn new() -> Self {
         Self {
             env: HashMap::new(),
+            cache: Vec::new(),
+            counter: 0,
         }
+    }
+    fn get_cache(&self, v: &Value) -> Option<usize> {
+        for (k, w) in self.cache.iter() {
+            if k == v {
+                return Some(*w);
+            }
+        }
+        None
+    }
+    fn get_new_counter(&mut self) -> usize {
+        let c = self.counter;
+        self.counter += 1;
+        c
     }
     fn parse_defs(&mut self, expr: &Value) -> Res<()> {
         let cons = match expr {
@@ -50,7 +80,7 @@ impl<'a> HyperResolutionParser<'a> {
         }
         Ok(())
     }
-    fn parse_let(&mut self, expr: &Value) -> Res<ResolutionProof> {
+    fn parse_let(&mut self, expr: &Value) -> Res<(usize, ResolutionProof)> {
         match expr {
             Value::Cons(c) => {
                 let old = self.env.clone();
@@ -73,47 +103,66 @@ impl<'a> HyperResolutionParser<'a> {
             _ => bail!("invalid let"),
         }
     }
-    fn parse_mp(&mut self, expr: &Value) -> Res<ResolutionProof> {
+    fn parse_mp(&mut self, expr: &Value) -> Res<(usize, ResolutionProof)> {
         let c = match expr {
             Value::Cons(c) => c,
             _ => bail!("invalid mp"),
         };
         let mut c = c.iter();
         let child = c.next().ok_or("invalid mp")?.car();
-        let asserted = c.next().ok_or("invalid mp")?.car();
-        let false_e = c.next().ok_or("invalid mp")?.car();
+        let _asserted = c.next().ok_or("invalid mp")?.car();
+        let _false_e = c.next().ok_or("invalid mp")?.car();
         if c.next().is_some() {
             bail!("invalid mp");
         }
-        let t = self.parse_expr(child)?;
-        unimplemented!()
+        let (i, proofs) = self.parse_expr(child)?;
+        Ok((i, proofs))
     }
-    fn parse_hyper_res(&mut self, expr: &Value) -> Res<ResolutionProof> {
+    fn parse_hyper_res(&mut self, expr: &Value) -> Res<(usize, ResolutionProof)> {
         let c = match expr {
             Value::Cons(c) => c,
             _ => bail!("invalid hyper-res"),
         };
         let mut c = c.iter();
+        let asserted = c.next().ok_or("invalid hyper-res")?;
+        let _ = self.parse_asserted(asserted.car())?;
+        let mut v: Vec<_> = c.collect();
+        let head = v.pop().ok_or("invalid hyper-res")?.car();
+        if let Some(e) = self.get_cache(head) {
+            return Ok((e, ResolutionProof::new()));
+        }
+        let i = self.get_new_counter();
         let mut children = vec![];
-        for x in c {
+        for x in v.into_iter() {
             let x = x.car();
             let r = self.parse_expr(x)?;
             children.push(r);
         }
-        unimplemented!()
+        let (indices, proofs): (Vec<_>, Vec<_>) = children.into_iter().unzip();
+        self.cache.push((head.clone(), i));
+        let mut proofs: Vec<_> = proofs.into_iter().flatten().collect();
+        let (head, arguments) = self.parse_head(head)?;
+        proofs.push(Node::new(i, head, arguments, indices));
+        Ok((i, proofs))
     }
-    fn parse_asserted(&mut self, expr: &Value) -> Res<ResolutionProof> {
-        let c = match expr {
-            Value::Cons(c) => c,
-            _ => bail!("invalid asserted"),
-        };
-        let mut c = c.iter();
-        let child = c.next().ok_or("invalid asserted")?.car();
-        if c.next().is_some() {
-            bail!("invalid asserted");
+    fn parse_val(&mut self, val: &Value) -> Res<V> {
+        match val {
+            Value::Number(n) => Ok(V::Int(n.as_i64().ok_or("invalid int")?)),
+            _ => bail!("invalid argument of head: {}", val),
         }
-        let t = self.parse_expr(child)?;
-        unimplemented!()
+    }
+    fn parse_head(&mut self, head: &Value) -> Res<(String, Vec<V>)> {
+        println!("{:#?}", head);
+        let cons = head.as_cons().ok_or("invalid head")?;
+        let mut cons_iter = cons.iter();
+        let top = cons_iter.next().ok_or("invalid head")?.car();
+        let pred = top.as_symbol().ok_or("invalid head")?;
+        let arguments: Result<Vec<_>, _> = cons_iter.map(|x| self.parse_val(x.car())).collect();
+        Ok((pred.to_string(), arguments?))
+    }
+    fn parse_asserted(&mut self, expr: &Value) -> Res<()> {
+        println!("asserted: {expr}");
+        Ok(())
     }
     fn as_hyper_res(&self, c: &Cons) -> Option<Vec<i64>> {
         let mut c = c.iter();
@@ -130,7 +179,7 @@ impl<'a> HyperResolutionParser<'a> {
         let res = c.flat_map(|x| x.car().as_i64()).collect();
         Some(res)
     }
-    fn parse_expr(&mut self, expr: &Value) -> Res<ResolutionProof> {
+    fn parse_expr(&mut self, expr: &Value) -> Res<(usize, ResolutionProof)> {
         use Value::*;
         println!("parse_expr: {}", expr);
         match expr {
@@ -146,7 +195,7 @@ impl<'a> HyperResolutionParser<'a> {
                     String(_) => todo!(),
                     Symbol(s) if s.as_ref() == "let" => self.parse_let(cont),
                     Symbol(s) if s.as_ref() == "mp" => self.parse_mp(cont),
-                    Symbol(s) if s.as_ref() == "asserted" => self.parse_asserted(cont),
+                    //Symbol(s) if s.as_ref() == "asserted" => self.parse_asserted(cont),
                     Symbol(_) => todo!(),
                     Keyword(_) => todo!(),
                     Bytes(_) => todo!(),
@@ -165,7 +214,8 @@ impl<'a> HyperResolutionParser<'a> {
             String(_) => todo!(),
             Symbol(s) => {
                 if let Some(v) = self.env.get(s.as_ref()) {
-                    self.parse_expr(v)
+                    let v = v.clone();
+                    self.parse_expr(&v)
                 } else {
                     bail!("undefined symbol: {}", s)
                 }
@@ -175,15 +225,27 @@ impl<'a> HyperResolutionParser<'a> {
             Vector(_) => todo!(),
         }
     }
-    pub fn parse_spacer<S>(&mut self, text: S) -> Res<ResolutionProof>
+    pub fn parse_spacer<S>(&'a mut self, text: S) -> Res<ResolutionProof>
     where
-        S: AsRef<str>,
+        S: AsRef<str> + 'a,
     {
-        let text = text.as_ref();
-        match from_str(text) {
-            Ok(v) => self.parse_expr(&v),
+        let (_, p) = match from_str(text.as_ref()) {
+            Ok(v) => self.parse_expr(&v)?,
             Err(e) => bail!("parse error: {}", e),
+        };
+        for x in p.iter() {
+            print!("{}, {}(", x.id, x.head);
+            for y in x.arguments.iter() {
+                print!("{},", y);
+            }
+            print!("): ");
+
+            for y in x.children.iter() {
+                print!(" {}", y);
+            }
+            println!()
         }
+        Ok(p)
     }
 }
 

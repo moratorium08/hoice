@@ -43,6 +43,7 @@ use crate::unsat_core::UnsatRes;
 use std::path::PathBuf;
 
 mod exec_chc;
+mod hyper_res;
 mod spacer;
 
 pub struct AbsADTConf {
@@ -244,5 +245,6 @@ pub fn work(
     instance.dump_as_smt2(&mut file, "no_def", "").unwrap();
 
     spacer::run_spacer(&instance)?;
+
     unimplemented!();
 }
