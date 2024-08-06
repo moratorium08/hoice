@@ -41,6 +41,7 @@ use hyper_res::ResolutionProof;
 
 use crate::common::*;
 use crate::info::{Pred, VarInfo};
+use crate::term::Term;
 use crate::unsat_core::UnsatRes;
 use std::path::PathBuf;
 
@@ -112,7 +113,7 @@ fn walk_res(
     n: &hyper_res::Node,
     cur: ClsIdx,
     res: &hyper_res::ResolutionProof,
-) -> Res<term::Term> {
+) -> Res<Term> {
     let c = &instance[cur];
     let (p, args) = c.rhs().ok_or("err")?;
     let name = &instance.preds()[p].name;
@@ -121,16 +122,42 @@ fn walk_res(
     unimplemented!()
 }
 
-fn get_cex(instance: &Instance, tree: CallTree, _profiler: &Profiler) -> Res<term::Term> {
-    //for child in n.children.iter() {
-    //    let n = res.get_node(n)?;
-    //    let c = walk_res(instance, n, )
-    //    println!("{}", c.head);
-    //    println!("{:?}", c.arguments);
-    //}
-    unimplemented!()
+/// Obtain a finite expansion of the original CHC instance along with the resolution proof (call-tree).
+fn get_cex(instance: &Instance, tree: &CallTree, _profiler: &Profiler) -> Term {
+    fn walk(instance: &Instance, tree: &CallTree, cur: &usize) -> Term {
+        let cur = tree.nodes.get(cur).unwrap();
+        let clause = &instance[cur.clsidx];
+        let terms: Vec<_> = clause.lhs_terms().iter().cloned().collect();
+
+        // Assumption: the order of node.children is the same as the order of lhs_preds
+        // Correct?
+        assert_eq!(clause.lhs_preds().len(), cur.children.len());
+        for ((prdidx, args), child) in clause.lhs_preds().iter().zip(cur.children.iter()) {
+            println!("{:?}", args);
+            let res = walk(instance, tree, child);
+            //let t = handle_pred_app(instance, tree, prdidx, args.iter(), res);
+            todo!("subst the arguments");
+            terms.push(res);
+        }
+        term::and(terms)
+    }
+
+    fn handle_pred_app<'a>(
+        instance: &Instance,
+        tree: &CallTree,
+        prdidx: &PrdIdx,
+        args: impl Iterator<Item = Term>,
+        child: Term,
+    ) -> Term {
+        unimplemented!()
+    }
+
+    walk(instance, &tree, &tree.root)
 }
 
+/*** Pre/Post-process for tracking clauses in the resolution proof ***/
+
+/// Encode each clause with a tag predicate whose name is `tag!X` where `X` is the clause index.
 fn encode_tag(instance: &Instance, _profiler: &Profiler) -> Res<Instance> {
     let mut new_instance = instance.clone();
     for (clsidx, _) in instance.clauses().index_iter() {
@@ -144,13 +171,22 @@ fn encode_tag(instance: &Instance, _profiler: &Profiler) -> Res<Instance> {
     Ok(new_instance)
 }
 
+/// Data structure for a node in the call tree
 pub struct Node {
+    /// Name of the predicate
     pub head: String,
-    pub children: Vec<usize>,
-    pub clsidx: ClsIdx,
+    /// Arguments of the predicate application for refutation
     pub args: Vec<i64>,
+    /// Children of this node in the call-tree
+    pub children: Vec<usize>,
+    /// Index of the clause in the original CHC
+    pub clsidx: ClsIdx,
 }
 impl Node {
+    /// Transform hyper_res::Node to Node
+    ///
+    /// We retrieve the clause index from the encoded-tag predicate.
+    /// `cls_map` is a map from node index of the refutation proof to the clause index in the CHC instance.
     fn tr_from_hyper_res(mut n: hyper_res::Node, cls_map: &HashMap<usize, usize>) -> Option<Self> {
         println!("tr_from_hyper_res: {} {:?}", n.head, n.children);
         let idx = n.children.iter().enumerate().find_map(|(i, x)| {
@@ -219,6 +255,11 @@ impl fmt::Display for CallTree {
     }
 }
 
+/// Transform a resolution proof to a call tree
+///
+/// 1. Find the tag nodes in the refutation tree
+/// 2. Create a map from node id of tag nodes to clause index
+/// 3. Transform each node
 pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
     // map from node (whose head is tag!X) id to its clause index
     let mut map = HashMap::new();
@@ -419,7 +460,7 @@ pub fn work(
     let call_tree = decode_tag(rp)?;
     println!("{call_tree}");
 
-    let cex = get_cex(&instance, call_tree, _profiler);
+    let cex = get_cex(&instance, &call_tree, _profiler);
 
     unimplemented!();
 }
