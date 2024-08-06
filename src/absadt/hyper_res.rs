@@ -42,7 +42,7 @@ impl Node {
 }
 
 pub struct ResolutionProof {
-    nodes: Vec<Node>,
+    pub nodes: Vec<Node>,
 }
 
 impl ResolutionProof {

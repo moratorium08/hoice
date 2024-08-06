@@ -37,6 +37,8 @@
 //! ## Some Assumptions
 //! - set of ADT does not change from start to end during `work`
 //!   - they are defined as the global hashconsed objects
+use hyper_res::ResolutionProof;
+
 use crate::common::*;
 use crate::info::{Pred, VarInfo};
 use crate::unsat_core::UnsatRes;
@@ -119,17 +121,7 @@ fn walk_res(
     unimplemented!()
 }
 
-fn get_cex(
-    instance: &Instance,
-    res: hyper_res::ResolutionProof,
-    _profiler: &Profiler,
-) -> Res<term::Term> {
-    let mut v: Vec<_> = res.get_roots().collect();
-    assert!(v.len() == 1);
-    let n = v.pop().unwrap();
-    println!("{}", n.head);
-    println!("{:?}", n.arguments);
-
+fn get_cex(instance: &Instance, tree: CallTree, _profiler: &Profiler) -> Res<term::Term> {
     //for child in n.children.iter() {
     //    let n = res.get_node(n)?;
     //    let c = walk_res(instance, n, )
@@ -152,10 +144,109 @@ fn encode_tag(instance: &Instance, _profiler: &Profiler) -> Res<Instance> {
     Ok(new_instance)
 }
 
-pub struct CallTree {}
+pub struct Node {
+    pub head: String,
+    pub children: Vec<usize>,
+    pub clsidx: ClsIdx,
+    pub args: Vec<i64>,
+}
+impl Node {
+    fn tr_from_hyper_res(mut n: hyper_res::Node, cls_map: &HashMap<usize, usize>) -> Option<Self> {
+        println!("tr_from_hyper_res: {} {:?}", n.head, n.children);
+        let idx = n.children.iter().enumerate().find_map(|(i, x)| {
+            if cls_map.contains_key(x) {
+                Some(i)
+            } else {
+                None
+            }
+        })?;
+        let cls_id = n.children.remove(idx);
+        let clsidx = ClsIdx::new(*cls_map.get(&cls_id)?);
 
-fn decode_tag(res: &hyper_res::ResolutionProof) -> Res<CallTree> {
-    unimplemented!()
+        let args = n
+            .arguments
+            .into_iter()
+            .map(|hyper_res::V::Int(x)| x)
+            .collect();
+        let node = Self {
+            head: n.head.clone(),
+            children: n.children.clone(),
+            clsidx,
+            args,
+        };
+        Some(node)
+    }
+}
+
+pub struct CallTree {
+    pub root: usize,
+    pub nodes: HashMap<usize, Node>,
+}
+impl fmt::Display for Node {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}_{}(", self.head, self.clsidx)?;
+        let mut itr = self.args.iter();
+        if let Some(arg) = itr.next() {
+            write!(f, "{}", arg)?;
+        }
+        for arg in itr {
+            write!(f, ", {}", arg)?;
+        }
+        write!(f, ")")?;
+        //write!(f, ") := ")?;
+        //for c in self.children.iter() {
+        //    write!(f, "{}, ", c)?;
+        //}
+        Ok(())
+    }
+}
+
+impl fmt::Display for CallTree {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut q = vec![(self.root, 0)];
+        while let Some((cur, indent)) = q.pop() {
+            let n = self.nodes.get(&cur).unwrap();
+            for _ in 0..indent {
+                write!(f, "  ")?;
+            }
+            writeln!(f, "{}: {}", cur, n)?;
+            for c in n.children.iter().rev() {
+                q.push((*c, indent + 1));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
+    // map from node (whose head is tag!X) id to its clause index
+    let mut map = HashMap::new();
+    for n in res.nodes.iter() {
+        if n.head.starts_with("tag!") {
+            let clsidx = n.head["tag!".len()..]
+                .parse::<usize>()
+                .map_err(|_| "invalid tag")?;
+            let r = map.insert(n.id, clsidx);
+            assert!(r.is_none())
+        }
+    }
+
+    let mut v: Vec<_> = res.get_roots().collect();
+    assert!(v.len() == 1);
+    let root = v.pop().unwrap().id;
+
+    let mut nodes = HashMap::new();
+    for n in res.nodes.into_iter() {
+        if n.head.starts_with("tag!") {
+            continue;
+        }
+        let id = n.id;
+        let node = Node::tr_from_hyper_res(n, &map).ok_or("hyper resolution is ill-structured")?;
+        let r = nodes.insert(id, node);
+        assert!(r.is_none())
+    }
+    Ok(CallTree { root, nodes })
 }
 
 /// Abstract ADT terms with integer expressions, and solve the instance by an external solver.
@@ -259,7 +350,7 @@ pub fn work(
 
     let p = instance.push_pred("P", sig);
 
-    let minus2 = term::cst(val::int(-2));
+    let minus2 = term::cst(val::int(-4));
     let zerot = term::cst(val::int(0));
     let xt = term::var(x, typ::int());
     let x1t = term::add(vec![xt.clone(), term::cst(val::int(1))]);
@@ -325,7 +416,10 @@ pub fn work(
         }
     };
 
-    let cex = get_cex(&instance, rp, _profiler);
+    let call_tree = decode_tag(rp)?;
+    println!("{call_tree}");
+
+    let cex = get_cex(&instance, call_tree, _profiler);
 
     unimplemented!();
 }
