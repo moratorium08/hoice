@@ -45,6 +45,7 @@ use crate::term::Term;
 use crate::unsat_core::UnsatRes;
 use std::path::PathBuf;
 
+mod chc;
 mod exec_chc;
 mod hyper_res;
 mod spacer;
@@ -132,10 +133,24 @@ fn get_cex(instance: &Instance, tree: &CallTree, _profiler: &Profiler) -> Term {
         // Assumption: the order of node.children is the same as the order of lhs_preds
         // Correct?
         assert_eq!(clause.lhs_preds().len(), cur.children.len());
-        for ((prdidx, args), child) in clause.lhs_preds().iter().zip(cur.children.iter()) {
-            println!("{:?}", args);
+        let mut prdmap = HashMap::new();
+        for (prdidx, argss) in clause.lhs_preds().iter() {
+            let mut itr = argss.iter();
+            let args = itr.next().unwrap();
+            // TODO: handle the clause whose body has P(x) /\ P(x + 1)
+            assert!(itr.next().is_none());
+            prdmap.insert(prdidx, args);
+        }
+
+        for child in cur.children.iter() {
+            let clsid = tree.nodes.get(child).unwrap().clsidx;
+            let clause = &instance[clsid];
+            let (prdidx, vars) = clause.rhs().unwrap();
+            let args = prdmap.get(&prdidx).unwrap();
+
             let res = walk(instance, tree, child);
-            //let t = handle_pred_app(instance, tree, prdidx, args.iter(), res);
+            // inline
+            //res.subst_total(map);
             todo!("subst the arguments");
             terms.push(res);
         }
@@ -409,6 +424,7 @@ pub fn work(
         pred: p,
         args: a2.into(),
     };
+    let t2 = t1.clone();
 
     let mut a3 = VarMap::new();
     a3.push(xt.clone());
@@ -429,12 +445,27 @@ pub fn work(
 
     let mut a3 = VarMap::new();
     a3.push(xt.clone());
-    instance.push_new_clause(
-        vars.clone(),
-        vec![t1.into()],
-        Some((p, a3.clone().into())),
-        "P(x+2) => P(x)",
-    )?;
+    let c = instance
+        .push_new_clause(
+            vars.clone(),
+            vec![t1.into(), t2.into()],
+            Some((p, a3.clone().into())),
+            "P(x+2) => P(x)",
+        )?
+        .unwrap();
+    let preds = instance[c].lhs_preds();
+    // 各predごとにpredicate app
+    // 各appごとにargss/args
+    //  - argss:
+    for (p, argss) in preds.iter() {
+        println!("argss: {:?}", argss);
+        for args in argss.iter() {
+            println!("args: {:?}", args);
+            for arg in args.iter() {
+                println!("{:?}", arg);
+            }
+        }
+    }
 
     // P(x) => x <= -2
     let mut a2 = VarMap::new();
@@ -446,7 +477,8 @@ pub fn work(
     };
     instance.push_new_clause(vars.clone(), vec![t3, t4], None, "P(x) => x <= 0")?;
 
-    instance.dump_as_smt2(&mut file, "no_def", "").unwrap();
+    let my_instance = chc::ABSADTInstance::from(&instance);
+    my_instance.dump_as_smt2(&mut file, "no_def", "").unwrap();
 
     let encoded_instance = encode_tag(&instance, _profiler)?;
 
