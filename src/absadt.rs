@@ -123,188 +123,6 @@ fn walk_res(
     unimplemented!()
 }
 
-/// Obtain a finite expansion of the original CHC instance along with the resolution proof (call-tree).
-fn get_cex(instance: &Instance, tree: &CallTree, _profiler: &Profiler) -> Term {
-    fn walk(instance: &Instance, tree: &CallTree, cur: &usize) -> Term {
-        let cur = tree.nodes.get(cur).unwrap();
-        let clause = &instance[cur.clsidx];
-        let terms: Vec<_> = clause.lhs_terms().iter().cloned().collect();
-
-        // Assumption: the order of node.children is the same as the order of lhs_preds
-        // Correct?
-        assert_eq!(clause.lhs_preds().len(), cur.children.len());
-        let mut prdmap = HashMap::new();
-        for (prdidx, argss) in clause.lhs_preds().iter() {
-            let mut itr = argss.iter();
-            let args = itr.next().unwrap();
-            // TODO: handle the clause whose body has P(x) /\ P(x + 1)
-            assert!(itr.next().is_none());
-            prdmap.insert(prdidx, args);
-        }
-
-        for child in cur.children.iter() {
-            let clsid = tree.nodes.get(child).unwrap().clsidx;
-            let clause = &instance[clsid];
-            let (prdidx, vars) = clause.rhs().unwrap();
-            let args = prdmap.get(&prdidx).unwrap();
-
-            let res = walk(instance, tree, child);
-            // inline
-            //res.subst_total(map);
-            todo!("subst the arguments");
-            terms.push(res);
-        }
-        term::and(terms)
-    }
-
-    fn handle_pred_app<'a>(
-        instance: &Instance,
-        tree: &CallTree,
-        prdidx: &PrdIdx,
-        args: impl Iterator<Item = Term>,
-        child: Term,
-    ) -> Term {
-        unimplemented!()
-    }
-
-    walk(instance, &tree, &tree.root)
-}
-
-/*** Pre/Post-process for tracking clauses in the resolution proof ***/
-
-/// Encode each clause with a tag predicate whose name is `tag!X` where `X` is the clause index.
-fn encode_tag(instance: &Instance, _profiler: &Profiler) -> Res<Instance> {
-    let mut new_instance = instance.clone();
-    for (clsidx, _) in instance.clauses().index_iter() {
-        let name = format!("tag!{}", clsidx);
-        let sig = VarMap::new();
-        let prdidx = new_instance.push_pred(name, sig);
-        let vars = VarMap::new();
-        new_instance.push_new_clause(vars, Vec::new(), Some((prdidx, VarMap::new().into())), "")?;
-        new_instance[clsidx].insert_pred_app(prdidx, VarMap::new().into());
-    }
-    Ok(new_instance)
-}
-
-/// Data structure for a node in the call tree
-pub struct Node {
-    /// Name of the predicate
-    pub head: String,
-    /// Arguments of the predicate application for refutation
-    pub args: Vec<i64>,
-    /// Children of this node in the call-tree
-    pub children: Vec<usize>,
-    /// Index of the clause in the original CHC
-    pub clsidx: ClsIdx,
-}
-impl Node {
-    /// Transform hyper_res::Node to Node
-    ///
-    /// We retrieve the clause index from the encoded-tag predicate.
-    /// `cls_map` is a map from node index of the refutation proof to the clause index in the CHC instance.
-    fn tr_from_hyper_res(mut n: hyper_res::Node, cls_map: &HashMap<usize, usize>) -> Option<Self> {
-        println!("tr_from_hyper_res: {} {:?}", n.head, n.children);
-        let idx = n.children.iter().enumerate().find_map(|(i, x)| {
-            if cls_map.contains_key(x) {
-                Some(i)
-            } else {
-                None
-            }
-        })?;
-        let cls_id = n.children.remove(idx);
-        let clsidx = ClsIdx::new(*cls_map.get(&cls_id)?);
-
-        let args = n
-            .arguments
-            .into_iter()
-            .map(|hyper_res::V::Int(x)| x)
-            .collect();
-        let node = Self {
-            head: n.head.clone(),
-            children: n.children.clone(),
-            clsidx,
-            args,
-        };
-        Some(node)
-    }
-}
-
-pub struct CallTree {
-    pub root: usize,
-    pub nodes: HashMap<usize, Node>,
-}
-impl fmt::Display for Node {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}_{}(", self.head, self.clsidx)?;
-        let mut itr = self.args.iter();
-        if let Some(arg) = itr.next() {
-            write!(f, "{}", arg)?;
-        }
-        for arg in itr {
-            write!(f, ", {}", arg)?;
-        }
-        write!(f, ")")?;
-        //write!(f, ") := ")?;
-        //for c in self.children.iter() {
-        //    write!(f, "{}, ", c)?;
-        //}
-        Ok(())
-    }
-}
-
-impl fmt::Display for CallTree {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut q = vec![(self.root, 0)];
-        while let Some((cur, indent)) = q.pop() {
-            let n = self.nodes.get(&cur).unwrap();
-            for _ in 0..indent {
-                write!(f, "  ")?;
-            }
-            writeln!(f, "{}: {}", cur, n)?;
-            for c in n.children.iter().rev() {
-                q.push((*c, indent + 1));
-            }
-        }
-
-        Ok(())
-    }
-}
-
-/// Transform a resolution proof to a call tree
-///
-/// 1. Find the tag nodes in the refutation tree
-/// 2. Create a map from node id of tag nodes to clause index
-/// 3. Transform each node
-pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
-    // map from node (whose head is tag!X) id to its clause index
-    let mut map = HashMap::new();
-    for n in res.nodes.iter() {
-        if n.head.starts_with("tag!") {
-            let clsidx = n.head["tag!".len()..]
-                .parse::<usize>()
-                .map_err(|_| "invalid tag")?;
-            let r = map.insert(n.id, clsidx);
-            assert!(r.is_none())
-        }
-    }
-
-    let mut v: Vec<_> = res.get_roots().collect();
-    assert!(v.len() == 1);
-    let root = v.pop().unwrap().id;
-
-    let mut nodes = HashMap::new();
-    for n in res.nodes.into_iter() {
-        if n.head.starts_with("tag!") {
-            continue;
-        }
-        let id = n.id;
-        let node = Node::tr_from_hyper_res(n, &map).ok_or("hyper resolution is ill-structured")?;
-        let r = nodes.insert(id, node);
-        assert!(r.is_none())
-    }
-    Ok(CallTree { root, nodes })
-}
-
 /// Abstract ADT terms with integer expressions, and solve the instance by an external solver.
 ///
 /// Returns
@@ -478,21 +296,20 @@ pub fn work(
     instance.push_new_clause(vars.clone(), vec![t3, t4], None, "P(x) => x <= 0")?;
 
     let my_instance = chc::ABSADTInstance::from(&instance);
-    my_instance.dump_as_smt2(&mut file, "no_def", "").unwrap();
+    my_instance
+        .dump_as_smt2(&mut file, "no_def", "", true)
+        .unwrap();
 
-    let encoded_instance = encode_tag(&instance, _profiler)?;
+    my_instance.check_sat()?;
 
-    let rp = match spacer::run_spacer(&encoded_instance)? {
-        either::Right(rp) => rp,
-        either::Left(_) => {
-            panic!("sat")
-        }
-    };
+    //let rp = match spacer::run_spacer(&encoded_instance)? {
+    //    either::Right(rp) => rp,
+    //    either::Left(_) => {
+    //        panic!("sat")
+    //    }
+    //};
 
-    let call_tree = decode_tag(rp)?;
-    println!("{call_tree}");
-
-    let cex = get_cex(&instance, &call_tree, _profiler);
+    //let cex = get_cex(&instance, &call_tree, _profiler);
 
     unimplemented!();
 }

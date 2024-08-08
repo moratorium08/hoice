@@ -35,10 +35,18 @@ pub struct Spacer {
     stdin: std::process::ChildStdin,
     stdout: BufReader<std::process::ChildStdout>,
 }
+
 impl Drop for Spacer {
     fn drop(&mut self) {
         self.child.kill().unwrap();
     }
+}
+
+pub trait Instance {
+    fn dump_as_smt2<W, Options>(&self, w: &mut W, prefix: Options) -> Res<()>
+    where
+        W: std::io::Write,
+        Options: AsRef<str>;
 }
 
 impl Spacer {
@@ -71,9 +79,12 @@ impl Spacer {
         self.write_all(b"\n")
     }
 
-    fn dump_instance(&mut self, instance: &Instance) -> Res<()> {
+    fn dump_instance<I>(&mut self, instance: &I) -> Res<()>
+    where
+        I: Instance,
+    {
         let options = "(set-option :produce-proofs true)\n(set-option :pp.pretty_proof true)\n(set-option :produce-unsat-cores true)";
-        instance.dump_as_smt2(&mut self.stdin, "", options)?;
+        instance.dump_as_smt2(&mut self.stdin, options)?;
         Ok(())
     }
     fn check_sat(&mut self) -> Res<bool> {
@@ -115,7 +126,10 @@ fn parse_model(_output: &str) -> Res<CHCModel> {
     unimplemented!()
 }
 
-pub fn run_spacer(instance: &Instance) -> Res<either::Either<(), hyper_res::ResolutionProof>> {
+pub fn run_spacer<I>(instance: &I) -> Res<either::Either<(), hyper_res::ResolutionProof>>
+where
+    I: Instance,
+{
     let mut spacer = Spacer::new()?;
     spacer.dump_instance(instance)?;
 
@@ -129,8 +143,4 @@ pub fn run_spacer(instance: &Instance) -> Res<either::Either<(), hyper_res::Reso
         let proof = spacer.get_proof()?;
         Ok(either::Right(proof))
     }
-}
-
-fn solve_instance(instance: &Arc<Instance>, _profiler: &Profiler) -> Res<()> {
-    unimplemented!()
 }

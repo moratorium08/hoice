@@ -12,8 +12,10 @@
 //! These functionalitiy should be merged in the future with the original HoIce's instance
 use crate::common::*;
 use crate::info::VarInfo;
-use crate::learning::ice::synth::helpers;
 use crate::term::Term;
+
+use super::hyper_res;
+use hyper_res::ResolutionProof;
 
 pub struct PredApp {
     pub pred: PrdIdx,
@@ -26,6 +28,8 @@ pub struct AbsClause {
     pub lhs_preds: Vec<PredApp>,
     pub lhs_term: Term,
 }
+
+const TAG_PRED: &str = "tag!";
 
 /// Mostly taken from clause.rs
 /// The important difference is that the order of the body is preserved
@@ -48,6 +52,7 @@ impl AbsClause {
         write_var: WriteVar,
         write_prd: WritePrd,
         info: bool,
+        tag_pred: Option<&str>,
     ) -> IoRes<()>
     where
         W: Write,
@@ -55,7 +60,7 @@ impl AbsClause {
         WritePrd: Fn(&mut W, PrdIdx, &VarTerms, Option<&term::Bindings>) -> IoRes<()>,
     {
         writeln!(w, "({} ", keywords::cmd::assert)?;
-        self.forall_write(w, write_var, write_prd, 2)?;
+        self.forall_write(w, write_var, write_prd, 2, tag_pred)?;
         writeln!(w, ")")?;
         Ok(())
     }
@@ -65,6 +70,7 @@ impl AbsClause {
         write_var: WriteVar,
         write_prd: WritePrd,
         indent: usize,
+        tag_pred: Option<&str>,
     ) -> IoRes<()>
     where
         W: Write,
@@ -94,7 +100,7 @@ impl AbsClause {
         }
         writeln!(w, " )")?;
 
-        self.qf_write(w, write_var, write_prd, indent + 2)?;
+        self.qf_write(w, write_var, write_prd, indent + 2, tag_pred)?;
 
         writeln!(w, "{nil: >indent$})", nil = "", indent = indent)?;
 
@@ -108,6 +114,7 @@ impl AbsClause {
         write_var: WriteVar,
         write_prd: WritePrd,
         original_indent: usize,
+        tag_pred: Option<&str>,
     ) -> IoRes<()>
     where
         W: Write,
@@ -144,9 +151,12 @@ impl AbsClause {
 
         write!(w, "\n{nil: >indent$}   ", nil = "", indent = indent)?;
 
-        if self.lhs_preds.is_empty() {
+        if self.lhs_preds.is_empty() && tag_pred.is_none() {
             write!(w, " true")?
         } else {
+            if let Some(tag_pred) = tag_pred {
+                write!(w, " {}", tag_pred)?;
+            }
             for app in &self.lhs_preds {
                 write!(w, " ")?;
                 write_prd(w, app.pred, &app.args, bindings)?
@@ -183,7 +193,6 @@ impl AbsClause {
 
 pub struct ABSADTInstance<'a> {
     pub clauses: Vec<AbsClause>,
-    pub query: AbsClause,
     pub original: &'a Instance,
 }
 
@@ -281,11 +290,8 @@ impl<'a> From<&'a Instance> for ABSADTInstance<'a> {
             }
         }
         let query = query.unwrap();
-        Self {
-            clauses,
-            query,
-            original,
-        }
+        clauses.push(query);
+        Self { clauses, original }
     }
 }
 
@@ -295,6 +301,7 @@ impl<'a> ABSADTInstance<'a> {
         w: &mut File,
         blah: Blah,
         options: Option,
+        encode_tag: bool,
     ) -> Res<()>
     where
         File: Write,
@@ -353,6 +360,20 @@ impl<'a> ABSADTInstance<'a> {
             }
         }
 
+        // Append tag predicate for tracking the use of clauses in refutation proofs
+        if encode_tag {
+            for (clsidx, _) in self.clauses.iter().enumerate() {
+                write!(
+                    w,
+                    "({}\n  {TAG_PRED}{clsidx}\n  () Bool\n)",
+                    keywords::cmd::dec_fun
+                )?;
+                writeln!(w)?;
+                write!(w, "({} {TAG_PRED}{clsidx})", keywords::cmd::assert)?;
+                writeln!(w, "\n")?;
+            }
+        }
+
         for (idx, clause) in self.clauses.iter().enumerate() {
             writeln!(w, "\n; Clause #{}", idx)?;
 
@@ -375,6 +396,7 @@ impl<'a> ABSADTInstance<'a> {
                     }
                 },
                 true,
+                Some(&format!("{TAG_PRED}{idx}")),
             )?;
             writeln!(w)?;
             writeln!(w)?
@@ -383,5 +405,202 @@ impl<'a> ABSADTInstance<'a> {
         writeln!(w, "\n(check-sat)")?;
 
         Ok(())
+    }
+}
+
+/*** Pre/Post-process for tracking clauses in the resolution proof ***/
+
+/// Data structure for a node in the call tree
+pub struct Node {
+    /// Name of the predicate
+    pub head: String,
+    /// Arguments of the predicate application for refutation
+    pub args: Vec<i64>,
+    /// Children of this node in the call-tree
+    pub children: Vec<usize>,
+    /// Index of the clause in the original CHC
+    pub clsidx: ClsIdx,
+}
+impl Node {
+    /// Transform hyper_res::Node to Node
+    ///
+    /// We retrieve the clause index from the encoded-tag predicate.
+    /// `cls_map` is a map from node index of the refutation proof to the clause index in the CHC instance.
+    fn tr_from_hyper_res(mut n: hyper_res::Node, cls_map: &HashMap<usize, usize>) -> Option<Self> {
+        println!("tr_from_hyper_res: {} {:?}", n.head, n.children);
+        let idx = n.children.iter().enumerate().find_map(|(i, x)| {
+            if cls_map.contains_key(x) {
+                Some(i)
+            } else {
+                None
+            }
+        })?;
+        let cls_id = n.children.remove(idx);
+        let clsidx = ClsIdx::new(*cls_map.get(&cls_id)?);
+
+        let args = n
+            .arguments
+            .into_iter()
+            .map(|hyper_res::V::Int(x)| x)
+            .collect();
+        let node = Self {
+            head: n.head.clone(),
+            children: n.children.clone(),
+            clsidx,
+            args,
+        };
+        Some(node)
+    }
+}
+
+pub struct CallTree {
+    pub root: usize,
+    pub nodes: HashMap<usize, Node>,
+}
+impl fmt::Display for Node {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}_{}(", self.head, self.clsidx)?;
+        let mut itr = self.args.iter();
+        if let Some(arg) = itr.next() {
+            write!(f, "{}", arg)?;
+        }
+        for arg in itr {
+            write!(f, ", {}", arg)?;
+        }
+        write!(f, ")")?;
+        //write!(f, ") := ")?;
+        //for c in self.children.iter() {
+        //    write!(f, "{}, ", c)?;
+        //}
+        Ok(())
+    }
+}
+
+impl fmt::Display for CallTree {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut q = vec![(self.root, 0)];
+        while let Some((cur, indent)) = q.pop() {
+            let n = self.nodes.get(&cur).unwrap();
+            for _ in 0..indent {
+                write!(f, "  ")?;
+            }
+            writeln!(f, "{}: {}", cur, n)?;
+            for c in n.children.iter().rev() {
+                q.push((*c, indent + 1));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Transform a resolution proof to a call tree
+///
+/// 1. Find the tag nodes in the refutation tree
+/// 2. Create a map from node id of tag nodes to clause index
+/// 3. Transform each node
+pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
+    // map from node (whose head is tag!X) id to its clause index
+    let mut map = HashMap::new();
+    for n in res.nodes.iter() {
+        if n.head.starts_with("tag!") {
+            let clsidx = n.head["tag!".len()..]
+                .parse::<usize>()
+                .map_err(|_| "invalid tag")?;
+            let r = map.insert(n.id, clsidx);
+            assert!(r.is_none())
+        }
+    }
+
+    let mut v: Vec<_> = res.get_roots().collect();
+    assert!(v.len() == 1);
+    let root = v.pop().unwrap().id;
+
+    let mut nodes = HashMap::new();
+    for n in res.nodes.into_iter() {
+        if n.head.starts_with("tag!") {
+            continue;
+        }
+        let id = n.id;
+        let node = Node::tr_from_hyper_res(n, &map).ok_or("hyper resolution is ill-structured")?;
+        let r = nodes.insert(id, node);
+        assert!(r.is_none())
+    }
+    Ok(CallTree { root, nodes })
+}
+
+impl super::spacer::Instance for ABSADTInstance<'_> {
+    fn dump_as_smt2<File, Option>(&self, w: &mut File, options: Option) -> Res<()>
+    where
+        File: Write,
+        Option: AsRef<str>,
+    {
+        self.dump_as_smt2(w, "", options, true)
+    }
+}
+
+impl<'a> ABSADTInstance<'a> {
+    /// Obtain a finite expansion of the original CHC instance along with the resolution proof (call-tree).
+    fn get_cex(&self, tree: &CallTree, _profiler: &Profiler) -> Term {
+        //fn walk(instance: &ABSADTInstance, tree: &CallTree, cur: &usize) -> Term {
+        //    let cur = tree.nodes.get(cur).unwrap();
+        //    let clause = &instance[cur.clsidx];
+        //    let terms: Vec<_> = clause.lhs_terms().iter().cloned().collect();
+
+        //    // Assumption: the order of node.children is the same as the order of lhs_preds
+        //    // Correct?
+        //    assert_eq!(clause.lhs_preds().len(), cur.children.len());
+        //    let mut prdmap = HashMap::new();
+        //    for (prdidx, argss) in clause.lhs_preds().iter() {
+        //        let mut itr = argss.iter();
+        //        let args = itr.next().unwrap();
+        //        // TODO: handle the clause whose body has P(x) /\ P(x + 1)
+        //        assert!(itr.next().is_none());
+        //        prdmap.insert(prdidx, args);
+        //    }
+
+        //    for child in cur.children.iter() {
+        //        let clsid = tree.nodes.get(child).unwrap().clsidx;
+        //        let clause = &instance[clsid];
+        //        let (prdidx, vars) = clause.rhs().unwrap();
+        //        let args = prdmap.get(&prdidx).unwrap();
+
+        //        let res = walk(instance, tree, child);
+        //        // inline
+        //        //res.subst_total(map);
+        //        todo!("subst the arguments");
+        //        terms.push(res);
+        //    }
+        //    term::and(terms)
+        //}
+
+        fn handle_pred_app<'a>(
+            instance: &Instance,
+            tree: &CallTree,
+            prdidx: &PrdIdx,
+            args: impl Iterator<Item = Term>,
+            child: Term,
+        ) -> Term {
+            unimplemented!()
+        }
+
+        //walk(instance, &tree, &tree.root)
+        unimplemented!()
+    }
+
+    /// Check satisfiability of the query
+    /// Returns () when it' sat, and a counterexample when it's unsat
+    pub fn check_sat(&self) -> Res<either::Either<(), term::Term>> {
+        let res = super::spacer::run_spacer(self)?;
+        match res {
+            either::Left(_) => Ok(either::Left(())),
+            either::Right(proof) => {
+                let tree = decode_tag(proof)?;
+                println!("{tree}");
+                unimplemented!()
+                //let cex = self.get_cex(&tree)?;
+                //Ok(either::Right(counterexample))
+            }
+        }
     }
 }
