@@ -14,8 +14,11 @@ use crate::common::*;
 use crate::info::VarInfo;
 use crate::term::Term;
 
+use super::enc::{Approx, Enc};
 use super::hyper_res;
 use hyper_res::ResolutionProof;
+
+use std::path::PathBuf;
 
 pub struct PredApp {
     pub pred: PrdIdx,
@@ -194,6 +197,17 @@ impl AbsClause {
 pub struct AbsInstance<'a> {
     pub clauses: Vec<AbsClause>,
     pub original: &'a Instance,
+    encs: BTreeMap<Typ, Enc>,
+    log_dir: PathBuf,
+}
+
+impl AbsInstance<'_> {
+    fn gen_logdir(instance: &Instance) -> Res<PathBuf> {
+        let mut log_dir = crate::common::conf.out_dir(instance);
+        log_dir.push("absadt");
+        mk_dir(&log_dir)?;
+        Ok(log_dir)
+    }
 }
 
 fn gen_lhs_preds(clause: &Clause) -> Vec<PredApp> {
@@ -271,8 +285,8 @@ fn handle_definite(
     }
 }
 
-impl<'a> From<&'a Instance> for AbsInstance<'a> {
-    fn from(original: &'a Instance) -> Self {
+impl<'a> AbsInstance<'a> {
+    pub fn new(original: &'a Instance) -> Res<Self> {
         let mut clauses = Vec::new();
         let mut query = None;
         for clause in original.clauses().iter() {
@@ -291,11 +305,36 @@ impl<'a> From<&'a Instance> for AbsInstance<'a> {
         }
         let query = query.unwrap();
         clauses.push(query);
-        Self { clauses, original }
-    }
-}
 
-impl<'a> AbsInstance<'a> {
+        let log_dir = Self::gen_logdir(original)?;
+        let encs = BTreeMap::new();
+        Ok(Self {
+            clauses,
+            original,
+            encs,
+            log_dir,
+        })
+    }
+
+    pub fn instance_log_files<S: AsRef<str>>(&self, name: S) -> Res<::std::fs::File> {
+        use std::fs::OpenOptions;
+        let mut path = self.log_dir.clone();
+        path.push(name.as_ref());
+        path.set_extension("smt2");
+        let file = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(&path)
+            .chain_err(|| {
+                format!(
+                    "while creating instance dump file {}",
+                    path.to_string_lossy()
+                )
+            })?;
+        Ok(file)
+    }
+
     pub fn dump_as_smt2<File, Blah, Option>(
         &self,
         w: &mut File,
@@ -593,9 +632,115 @@ impl<'a> AbsInstance<'a> {
                 println!("{tree}");
                 let cex = self.get_cex(&tree);
                 println!("{}", cex);
-                unimplemented!()
-                //Ok(either::Right(counterexample))
+                Ok(either::Right(cex))
             }
         }
     }
+}
+
+pub fn test_check_sat() {
+    // generate a new instance
+    // P(0)
+    // P(x + 1) => P(x)
+    // P(x) => x <= 0
+
+    let mut instance = Instance::new();
+
+    let mut vars = VarInfos::new();
+    let x = vars.next_index();
+    let info = VarInfo::new("x", typ::int(), x);
+    vars.push(info);
+
+    let mut sig = VarMap::new();
+    sig.push(typ::int());
+
+    let p = instance.push_pred("P", sig);
+
+    let minus2 = term::cst(val::int(-4));
+    let zerot = term::cst(val::int(0));
+    let xt = term::var(x, typ::int());
+    let x1t = term::add(vec![xt.clone(), term::cst(val::int(1))]);
+    let x2t = term::add(vec![xt.clone(), term::cst(val::int(2))]);
+
+    // P(0)
+    let mut a1 = VarMap::new();
+    a1.push(zerot.clone());
+    instance
+        .push_new_clause(vars.clone(), vec![], Some((p, a1.into())), "P(0)")
+        .unwrap();
+
+    // P(x + 1) => P(x)
+    let mut a2 = VarMap::new();
+    a2.push(x1t.clone());
+    let t1 = term::TTerm::P {
+        pred: p,
+        args: a2.into(),
+    };
+    let t2 = t1.clone();
+
+    let t3 = term::TTerm::T(term::le(term::int_var(x), term::int(0)));
+
+    let mut a3 = VarMap::new();
+    a3.push(xt.clone());
+    instance
+        .push_new_clause(
+            vars.clone(),
+            vec![t3, t1.into()],
+            Some((p, a3.clone().into())),
+            "P(x+1) => P(x)",
+        )
+        .unwrap();
+
+    // P(x + 2) => P(x)
+    let mut a2 = VarMap::new();
+    a2.push(x2t.clone());
+    let t1 = term::TTerm::P {
+        pred: p,
+        args: a2.into(),
+    };
+
+    let mut a3 = VarMap::new();
+    a3.push(xt.clone());
+    let c = instance
+        .push_new_clause(
+            vars.clone(),
+            vec![t1.into(), t2.into()],
+            Some((p, a3.clone().into())),
+            "P(x+2) => P(x)",
+        )
+        .unwrap()
+        .unwrap();
+    let preds = instance[c].lhs_preds();
+    // 各predごとにpredicate app
+    // 各appごとにargss/args
+    //  - argss:
+    for (p, argss) in preds.iter() {
+        println!("argss: {:?}", argss);
+        for args in argss.iter() {
+            println!("args: {:?}", args);
+            for arg in args.iter() {
+                println!("{:?}", arg);
+            }
+        }
+    }
+
+    // P(x) => x <= -2
+    let mut a2 = VarMap::new();
+    a2.push(xt.clone());
+    let t3 = term::TTerm::T(term::lt(xt.clone(), minus2.clone()));
+    let t4 = term::TTerm::P {
+        pred: p,
+        args: a3.into(),
+    };
+    instance
+        .push_new_clause(vars.clone(), vec![t3, t4], None, "P(x) => x <= 0")
+        .unwrap();
+
+    let my_instance = AbsInstance::new(&instance).unwrap();
+    let mut file: std::fs::File = my_instance.instance_log_files("hoge").unwrap();
+    my_instance
+        .dump_as_smt2(&mut file, "no_def", "", true)
+        .unwrap();
+
+    my_instance.check_sat().unwrap();
 }
