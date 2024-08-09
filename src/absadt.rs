@@ -244,11 +244,13 @@ pub fn work(
     };
     let t2 = t1.clone();
 
+    let t3 = term::TTerm::T(term::le(term::int_var(x), term::int(0)));
+
     let mut a3 = VarMap::new();
     a3.push(xt.clone());
     instance.push_new_clause(
         vars.clone(),
-        vec![t1.into()],
+        vec![t3, t1.into()],
         Some((p, a3.clone().into())),
         "P(x+1) => P(x)",
     )?;
@@ -295,7 +297,7 @@ pub fn work(
     };
     instance.push_new_clause(vars.clone(), vec![t3, t4], None, "P(x) => x <= 0")?;
 
-    let my_instance = chc::ABSADTInstance::from(&instance);
+    let my_instance = chc::AbsInstance::from(&instance);
     my_instance
         .dump_as_smt2(&mut file, "no_def", "", true)
         .unwrap();

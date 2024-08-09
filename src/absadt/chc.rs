@@ -191,7 +191,7 @@ impl AbsClause {
     }
 }
 
-pub struct ABSADTInstance<'a> {
+pub struct AbsInstance<'a> {
     pub clauses: Vec<AbsClause>,
     pub original: &'a Instance,
 }
@@ -271,7 +271,7 @@ fn handle_definite(
     }
 }
 
-impl<'a> From<&'a Instance> for ABSADTInstance<'a> {
+impl<'a> From<&'a Instance> for AbsInstance<'a> {
     fn from(original: &'a Instance) -> Self {
         let mut clauses = Vec::new();
         let mut query = None;
@@ -295,7 +295,7 @@ impl<'a> From<&'a Instance> for ABSADTInstance<'a> {
     }
 }
 
-impl<'a> ABSADTInstance<'a> {
+impl<'a> AbsInstance<'a> {
     pub fn dump_as_smt2<File, Blah, Option>(
         &self,
         w: &mut File,
@@ -419,7 +419,7 @@ pub struct Node {
     /// Children of this node in the call-tree
     pub children: Vec<usize>,
     /// Index of the clause in the original CHC
-    pub clsidx: ClsIdx,
+    pub clsidx: usize,
 }
 impl Node {
     /// Transform hyper_res::Node to Node
@@ -436,7 +436,7 @@ impl Node {
             }
         })?;
         let cls_id = n.children.remove(idx);
-        let clsidx = ClsIdx::new(*cls_map.get(&cls_id)?);
+        let clsidx = *cls_map.get(&cls_id)?;
 
         let args = n
             .arguments
@@ -529,7 +529,7 @@ pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
     Ok(CallTree { root, nodes })
 }
 
-impl super::spacer::Instance for ABSADTInstance<'_> {
+impl super::spacer::Instance for AbsInstance<'_> {
     fn dump_as_smt2<File, Option>(&self, w: &mut File, options: Option) -> Res<()>
     where
         File: Write,
@@ -539,53 +539,47 @@ impl super::spacer::Instance for ABSADTInstance<'_> {
     }
 }
 
-impl<'a> ABSADTInstance<'a> {
+impl<'a> AbsInstance<'a> {
     /// Obtain a finite expansion of the original CHC instance along with the resolution proof (call-tree).
-    fn get_cex(&self, tree: &CallTree, _profiler: &Profiler) -> Term {
-        //fn walk(instance: &ABSADTInstance, tree: &CallTree, cur: &usize) -> Term {
-        //    let cur = tree.nodes.get(cur).unwrap();
-        //    let clause = &instance[cur.clsidx];
-        //    let terms: Vec<_> = clause.lhs_terms().iter().cloned().collect();
+    fn get_cex(&self, tree: &CallTree) -> Term {
+        fn walk(instance: &AbsInstance, tree: &CallTree, cur: &Node) -> Term {
+            let clause = &instance.clauses[cur.clsidx];
+            let mut terms = vec![clause.lhs_term.clone()];
 
-        //    // Assumption: the order of node.children is the same as the order of lhs_preds
-        //    // Correct?
-        //    assert_eq!(clause.lhs_preds().len(), cur.children.len());
-        //    let mut prdmap = HashMap::new();
-        //    for (prdidx, argss) in clause.lhs_preds().iter() {
-        //        let mut itr = argss.iter();
-        //        let args = itr.next().unwrap();
-        //        // TODO: handle the clause whose body has P(x) /\ P(x + 1)
-        //        assert!(itr.next().is_none());
-        //        prdmap.insert(prdidx, args);
-        //    }
+            // Assumption: the order of node.children is the same as the order of lhs_preds
+            // Correct?
+            assert_eq!(clause.lhs_preds.len(), cur.children.len());
 
-        //    for child in cur.children.iter() {
-        //        let clsid = tree.nodes.get(child).unwrap().clsidx;
-        //        let clause = &instance[clsid];
-        //        let (prdidx, vars) = clause.rhs().unwrap();
-        //        let args = prdmap.get(&prdidx).unwrap();
+            for (child_idx, app) in cur.children.iter().zip(clause.lhs_preds.iter()) {
+                let node = tree.nodes.get(child_idx).unwrap();
+                let clause = &instance.clauses[node.clsidx];
+                let res = walk(instance, tree, node);
 
-        //        let res = walk(instance, tree, child);
-        //        // inline
-        //        //res.subst_total(map);
-        //        todo!("subst the arguments");
-        //        terms.push(res);
-        //    }
-        //    term::and(terms)
-        //}
+                // sanity check
+                let p = instance
+                    .original
+                    .preds()
+                    .iter()
+                    .find(|x| x.name == node.head)
+                    .unwrap();
+                assert_eq!(app.pred, p.idx);
 
-        fn handle_pred_app<'a>(
-            instance: &Instance,
-            tree: &CallTree,
-            prdidx: &PrdIdx,
-            args: impl Iterator<Item = Term>,
-            child: Term,
-        ) -> Term {
-            unimplemented!()
+                let (head, args) = clause.rhs.as_ref().unwrap();
+                assert_eq!(*head, p.idx);
+                assert_eq!(app.args.len(), args.len());
+                let subst_map: VarHMap<_> =
+                    args.iter().cloned().zip(app.args.iter().cloned()).collect();
+
+                let res = res.subst_custom(&subst_map, false);
+                let res = res.expect("subst failed").0;
+                terms.push(res);
+            }
+            println!("terms.len(): {}", terms.len());
+            term::and(terms)
         }
 
-        //walk(instance, &tree, &tree.root)
-        unimplemented!()
+        let node = tree.nodes.get(&tree.root).unwrap();
+        walk(self, &tree, &node)
     }
 
     /// Check satisfiability of the query
@@ -597,8 +591,9 @@ impl<'a> ABSADTInstance<'a> {
             either::Right(proof) => {
                 let tree = decode_tag(proof)?;
                 println!("{tree}");
+                let cex = self.get_cex(&tree);
+                println!("{}", cex);
                 unimplemented!()
-                //let cex = self.get_cex(&tree)?;
                 //Ok(either::Right(counterexample))
             }
         }
