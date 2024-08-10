@@ -93,6 +93,12 @@ pub fn work(
         println!("clause: {:#?}", c.vars);
     }
 
+    let enc = enc::EncodeCtx::new(&adtconf);
+
+    for c in adtconf.clauses.iter() {
+        println!("clause: {}", c.lhs_term);
+    }
+
     chc::test_check_sat();
     unimplemented!();
 }
