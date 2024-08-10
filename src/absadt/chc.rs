@@ -197,7 +197,7 @@ impl AbsClause {
 pub struct AbsInstance<'a> {
     pub clauses: Vec<AbsClause>,
     pub original: &'a Instance,
-    encs: BTreeMap<Typ, Enc>,
+    pub encs: BTreeMap<Typ, Enc>,
     log_dir: PathBuf,
 }
 
