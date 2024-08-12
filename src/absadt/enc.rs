@@ -1,3 +1,5 @@
+use std::env::Args;
+
 use libc::qsort;
 
 use crate::common::*;
@@ -13,7 +15,63 @@ pub struct Approx {
     pub terms: Vec<Term>,
 }
 
+impl fmt::Display for Approx {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "λ")?;
+        for arg in self.args.iter() {
+            write!(f, "{}: {}, ", arg.name, arg.typ)?;
+        }
+        write!(f, ". (")?;
+        for term in self.terms.iter() {
+            write!(f, "{}, ", term)?;
+        }
+        write!(f, ")")
+    }
+}
+
 impl Approx {
+    pub fn new(args: VarInfos, terms: Vec<Term>) -> Self {
+        Self { args, terms }
+    }
+    /// Length for cons (of type Int List).
+    ///
+    /// Used for tests
+    pub fn len_cons() -> Self {
+        let mut infos = VarInfos::new();
+
+        let l_idx = infos.next_index();
+        let info = VarInfo::new("l".to_string(), typ::int(), l_idx);
+        infos.push(info);
+
+        let x_idx = infos.next_index();
+        let info = VarInfo::new("x".to_string(), typ::int(), x_idx);
+        infos.push(info);
+
+        // l + 1
+        let l = term::var(l_idx, typ::int());
+        let one = term::cst(val::int(1));
+        let l_plus_one = term::app(Op::Add, vec![l, one]);
+        Self {
+            args: infos,
+            terms: vec![l_plus_one],
+        }
+    }
+    /// Length for nil (of type Int List).
+    ///
+    /// Used for tests.
+    pub fn len_nil() -> Self {
+        let mut infos = VarInfos::new();
+
+        let x_idx = infos.next_index();
+        let info = VarInfo::new("x".to_string(), typ::int(), x_idx);
+        infos.push(info);
+
+        // 0
+        Self {
+            args: infos,
+            terms: vec![term::int_zero()],
+        }
+    }
     pub fn apply(&self, arg_terms: Vec<Term>) -> Vec<Term> {
         let mut res = Vec::with_capacity(self.terms.len());
         for term in self.terms.iter() {
@@ -51,6 +109,17 @@ impl Enc {
             introduced.push(new_var);
         }
         introduced
+    }
+
+    pub fn len_ilist(ilist_typ: Typ) -> Self {
+        let mut approxs = BTreeMap::new();
+        approxs.insert("cons".to_string(), Approx::len_cons());
+        approxs.insert("nil".to_string(), Approx::len_nil());
+        Self {
+            typ: ilist_typ,
+            n_params: 1,
+            approxs,
+        }
     }
 }
 
@@ -243,6 +312,7 @@ impl<'a> EncodeCtx<'a> {
 
 impl<'a> AbsInstance<'a> {
     pub fn encode_clause(&self, c: &super::chc::AbsClause) -> super::chc::AbsClause {
+        println!("hi: {}", c.lhs_term);
         let mut ctx = EncodeCtx::new(self);
         let new_vars = ctx.tr_varinfos(&c.vars);
         let lhs_term = term::and(ctx.encode(&c.lhs_term));
@@ -272,6 +342,7 @@ impl<'a> AbsInstance<'a> {
             }
             (*pred, new_args)
         });
+        println!("transformed: {}", lhs_term);
         super::chc::AbsClause {
             vars: new_vars,
             lhs_term,

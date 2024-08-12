@@ -38,6 +38,7 @@
 //! - set of ADT does not change from start to end during `work`
 //!   - they are defined as the global hashconsed objects
 use chc::AbsInstance;
+use enc::Enc;
 use hyper_res::ResolutionProof;
 
 use crate::common::*;
@@ -70,7 +71,7 @@ pub fn work(
     let cls = instance.clauses();
     let c = cls.iter().next().unwrap();
 
-    let adtconf = AbsInstance::new(instance)?;
+    let mut adtconf = AbsInstance::new(instance)?;
     let mut file: std::fs::File = adtconf.instance_log_files("hoge")?;
 
     instance.dump_as_smt2(&mut file, "hoge", "").unwrap();
@@ -92,6 +93,15 @@ pub fn work(
     for c in instance.clauses().into_iter() {
         println!("clause: {:#?}", c.vars);
     }
+
+    let last = &adtconf.clauses[0];
+    let ty = last
+        .vars
+        .iter()
+        .find_map(|x| if x.typ.is_dtyp() { Some(&x.typ) } else { None })
+        .unwrap()
+        .clone();
+    adtconf.encs.insert(ty.clone(), Enc::len_ilist(ty));
 
     adtconf.dump_as_smt2(&mut file, "before", "", false)?;
     let encoded = adtconf.encode();
