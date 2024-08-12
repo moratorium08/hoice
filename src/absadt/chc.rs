@@ -208,6 +208,14 @@ impl AbsInstance<'_> {
         mk_dir(&log_dir)?;
         Ok(log_dir)
     }
+    pub fn clone_with_clauses(&self, clauses: Vec<AbsClause>) -> Self {
+        Self {
+            clauses,
+            original: self.original,
+            encs: self.encs.clone(),
+            log_dir: self.log_dir.clone(),
+        }
+    }
 }
 
 fn gen_lhs_preds(clause: &Clause) -> Vec<PredApp> {

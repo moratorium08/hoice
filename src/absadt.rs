@@ -93,11 +93,9 @@ pub fn work(
         println!("clause: {:#?}", c.vars);
     }
 
-    let enc = enc::EncodeCtx::new(&adtconf);
-
-    for c in adtconf.clauses.iter() {
-        println!("clause: {}", c.lhs_term);
-    }
+    adtconf.dump_as_smt2(&mut file, "before", "", false)?;
+    let encoded = adtconf.encode();
+    encoded.dump_as_smt2(&mut file, "after", "", false)?;
 
     chc::test_check_sat();
     unimplemented!();

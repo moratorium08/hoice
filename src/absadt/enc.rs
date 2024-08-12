@@ -1,8 +1,11 @@
+use libc::qsort;
+
 use crate::common::*;
 use crate::info::{Pred, VarInfo};
 
 use super::chc::AbsInstance;
 
+#[derive(Debug, Clone)]
 pub struct Approx {
     /// Definition of the arguments
     pub args: VarInfos,
@@ -29,6 +32,7 @@ impl Approx {
 /// Enc is an encoding of ADT terms to integer expressions.
 ///
 /// Assumption: typ is a monomorphic type.
+#[derive(Debug, Clone)]
 pub struct Enc {
     /// Number of parameters for approximation
     pub typ: Typ,
@@ -56,7 +60,7 @@ pub struct EncodeCtx<'a> {
 }
 
 impl<'a> EncodeCtx<'a> {
-    fn tr_varinfos(&self, varmap: &VarInfos) -> (VarInfos, VarHMap<VarMap<VarInfo>>) {
+    fn tr_varinfos(&mut self, varmap: &VarInfos) -> VarInfos {
         let mut new_varmap = VarInfos::new();
         let mut orig2approx_var = VarHMap::new();
         for v in varmap.iter() {
@@ -68,7 +72,8 @@ impl<'a> EncodeCtx<'a> {
                 new_varmap.push(v.clone());
             }
         }
-        (new_varmap, orig2approx_var)
+        self.introduced = orig2approx_var;
+        new_varmap
     }
     pub fn new(instance: &'a super::chc::AbsInstance<'a>) -> Self {
         Self {
@@ -76,11 +81,26 @@ impl<'a> EncodeCtx<'a> {
             introduced: VarHMap::new(),
         }
     }
-    fn wrap(&self, term: &Term) -> Term {
-        unimplemented!()
-    }
     fn encode_val(&self, val: &Val) -> Vec<Term> {
-        unimplemented!()
+        match val.get() {
+            val::RVal::N(_) => todo!(),
+            val::RVal::B(_) | val::RVal::I(_) | val::RVal::R(_) | val::RVal::Array { .. } => {
+                vec![term::cst(val.clone())]
+            }
+            val::RVal::DTypNew { typ, name, args } => match self.instance.encs.get(typ) {
+                Some(enc) => {
+                    let approx = enc.approxs.get(name).unwrap();
+                    let mut new_args = Vec::new();
+                    for arg in args.iter() {
+                        for encoded in self.encode_val(arg) {
+                            new_args.push(encoded);
+                        }
+                    }
+                    approx.apply(new_args)
+                }
+                None => unimplemented!("no encoding for {}", name),
+            },
+        }
     }
     // fn handle_dtype_app(&self, dtyp: &DTyp, op: &Op, argss: Vec<Vec<Term>>) -> Vec<Term> {
     //     match op {
@@ -221,16 +241,46 @@ impl<'a> EncodeCtx<'a> {
     }
 }
 
-impl AbsInstance {
-    pub fn encode_clause(&self, c: super::chc::AbsClause) -> super::chc::AbsClause {
+impl<'a> AbsInstance<'a> {
+    pub fn encode_clause(&self, c: &super::chc::AbsClause) -> super::chc::AbsClause {
         let mut ctx = EncodeCtx::new(self);
-        let (x, y) = ctx.tr_varinfos(&c.vars);
-        let lhs_term = ctx.encode(&c.lhs_term);
+        let new_vars = ctx.tr_varinfos(&c.vars);
+        let lhs_term = term::and(ctx.encode(&c.lhs_term));
+        let mut lhs_preds = Vec::with_capacity(c.lhs_preds.len());
         for lhs_app in c.lhs_preds.iter() {
-            let mut args = Vec::new();
+            let mut new_args = VarMap::new();
             for arg in lhs_app.args.iter() {
-                let temrs = ctx.encode(arg);
+                for encoded in ctx.encode(arg) {
+                    new_args.push(encoded);
+                }
             }
+            lhs_preds.push(super::chc::PredApp {
+                pred: lhs_app.pred,
+                args: new_args.into(),
+            });
         }
+        let rhs = c.rhs.as_ref().map(|(pred, args)| {
+            let mut new_args = Vec::new();
+            for arg in args.iter() {
+                if let Some(approx) = ctx.introduced.get(arg) {
+                    for approx_arg in approx.iter() {
+                        new_args.push(approx_arg.idx);
+                    }
+                } else {
+                    new_args.push(arg.clone());
+                }
+            }
+            (*pred, new_args)
+        });
+        super::chc::AbsClause {
+            vars: new_vars,
+            lhs_term,
+            lhs_preds,
+            rhs,
+        }
+    }
+    pub fn encode(&self) -> Self {
+        let clauses = self.clauses.iter().map(|c| self.encode_clause(c)).collect();
+        self.clone_with_clauses(clauses)
     }
 }
