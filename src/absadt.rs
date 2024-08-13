@@ -107,6 +107,6 @@ pub fn work(
     let encoded = adtconf.encode();
     encoded.dump_as_smt2(&mut file, "after", "", false)?;
 
-    chc::test_check_sat();
+    //chc::test_check_sat();
     unimplemented!();
 }

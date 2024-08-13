@@ -198,6 +198,7 @@ pub struct AbsInstance<'a> {
     pub clauses: Vec<AbsClause>,
     pub original: &'a Instance,
     pub encs: BTreeMap<Typ, Enc>,
+    pub preds: Preds,
     log_dir: PathBuf,
 }
 
@@ -208,9 +209,10 @@ impl AbsInstance<'_> {
         mk_dir(&log_dir)?;
         Ok(log_dir)
     }
-    pub fn clone_with_clauses(&self, clauses: Vec<AbsClause>) -> Self {
+    pub fn clone_with_clauses(&self, clauses: Vec<AbsClause>, preds: Preds) -> Self {
         Self {
             clauses,
+            preds,
             original: self.original,
             encs: self.encs.clone(),
             log_dir: self.log_dir.clone(),
@@ -316,8 +318,10 @@ impl<'a> AbsInstance<'a> {
 
         let log_dir = Self::gen_logdir(original)?;
         let encs = BTreeMap::new();
+        let preds = original.preds().clone();
         Ok(Self {
             clauses,
+            preds,
             original,
             encs,
             log_dir,
@@ -397,7 +401,8 @@ impl<'a> AbsInstance<'a> {
         // writeln!(w)?;
         // writeln!(w)?;
 
-        for (pred_idx, pred) in self.original.preds().index_iter() {
+        println!("len_preds: {}", self.preds.len());
+        for (pred_idx, pred) in self.preds.index_iter() {
             if !self.original[pred_idx].is_defined() {
                 write!(w, "({}\n  {}\n  (", keywords::cmd::dec_fun, pred.name)?;
                 for typ in &pred.sig {
@@ -603,12 +608,7 @@ impl<'a> AbsInstance<'a> {
                 let res = walk(instance, tree, node);
 
                 // sanity check
-                let p = instance
-                    .original
-                    .preds()
-                    .iter()
-                    .find(|x| x.name == node.head)
-                    .unwrap();
+                let p = instance.preds.iter().find(|x| x.name == node.head).unwrap();
                 assert_eq!(app.pred, p.idx);
 
                 let (head, args) = clause.rhs.as_ref().unwrap();

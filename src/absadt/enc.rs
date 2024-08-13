@@ -51,6 +51,7 @@ impl Approx {
         let l = term::var(l_idx, typ::int());
         let one = term::cst(val::int(1));
         let l_plus_one = term::app(Op::Add, vec![l, one]);
+        println!("len_cons: {}", l_plus_one);
         Self {
             args: infos,
             terms: vec![l_plus_one],
@@ -66,6 +67,7 @@ impl Approx {
         let info = VarInfo::new("x".to_string(), typ::int(), x_idx);
         infos.push(info);
 
+        println!("len_nil: {}", term::int_zero());
         // 0
         Self {
             args: infos,
@@ -73,8 +75,13 @@ impl Approx {
         }
     }
     pub fn apply(&self, arg_terms: Vec<Term>) -> Vec<Term> {
+        println!("apply");
+        for arg in arg_terms.iter() {
+            println!("{}", arg);
+        }
         let mut res = Vec::with_capacity(self.terms.len());
         for term in self.terms.iter() {
+            println!("try subst: {}", term);
             let subst_map: VarHMap<_> = self
                 .args
                 .iter()
@@ -82,6 +89,10 @@ impl Approx {
                 .zip(arg_terms.iter().cloned())
                 .collect();
             res.push(term.subst_total(&subst_map).unwrap().0);
+        }
+        println!("res");
+        for t in res.iter() {
+            println!("{}", t);
         }
         res
     }
@@ -99,6 +110,11 @@ pub struct Enc {
 }
 
 impl Enc {
+    fn push_approx_typs(&self, varmap: &mut VarMap<Typ>) {
+        for i in 0..self.n_params {
+            varmap.push(typ::int());
+        }
+    }
     fn gen_typ(&self, varmap: &mut VarInfos, orig_name: &str) -> VarMap<VarInfo> {
         let mut introduced = VarMap::new();
         for i in 0..self.n_params {
@@ -350,8 +366,26 @@ impl<'a> AbsInstance<'a> {
             rhs,
         }
     }
+    fn encode_sig(&self, sig: &VarMap<Typ>) -> VarMap<Typ> {
+        let mut new_sig = VarMap::new();
+        for ty in sig.iter() {
+            if let Some(enc) = self.encs.get(&ty) {
+                enc.push_approx_typs(&mut new_sig)
+            } else {
+                new_sig.push(ty.clone());
+            }
+        }
+        new_sig
+    }
+
+    fn encode_pred(&self, p: &Pred) -> Pred {
+        let mut pred = p.clone();
+        pred.sig = self.encode_sig(&pred.sig);
+        pred
+    }
     pub fn encode(&self) -> Self {
         let clauses = self.clauses.iter().map(|c| self.encode_clause(c)).collect();
-        self.clone_with_clauses(clauses)
+        let preds = self.preds.iter().map(|p| self.encode_pred(p)).collect();
+        self.clone_with_clauses(clauses, preds)
     }
 }
