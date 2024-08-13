@@ -48,7 +48,6 @@ use std::path::PathBuf;
 
 mod chc;
 mod enc;
-mod exec_chc;
 mod hyper_res;
 mod spacer;
 
