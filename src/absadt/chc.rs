@@ -635,44 +635,101 @@ impl super::spacer::Instance for AbsInstance<'_> {
     }
 }
 
+pub struct CEX {
+    pub vars: VarInfos,
+    pub term: term::Term,
+}
+
+impl fmt::Display for CEX {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "forall")?;
+        for x in self.vars.iter() {
+            write!(f, " v_{}: {},", x.idx, x.typ)?;
+        }
+        write!(f, ". {}", self.term)
+    }
+}
+
 impl<'a> AbsInstance<'a> {
     /// Obtain a finite expansion of the original CHC instance along with the resolution proof (call-tree).
-    pub fn get_cex(&self, tree: &CallTree) -> Term {
-        fn walk(instance: &AbsInstance, tree: &CallTree, cur: &Node) -> Term {
+    pub fn get_cex(&self, tree: &CallTree) -> CEX {
+        fn walk(
+            instance: &AbsInstance,
+            tree: &CallTree,
+            cur: &Node,
+            cur_args: VarMap<term::Term>,
+            vars: &mut VarInfos,
+        ) -> term::Term {
             let clause = &instance.clauses[cur.clsidx];
-            let mut terms = vec![clause.lhs_term.clone()];
-
-            // Assumption: the order of node.children is the same as the order of lhs_preds
-            // Correct?
+            let mut args_remap = HashMap::new();
             assert_eq!(clause.lhs_preds.len(), cur.children.len());
 
+            // Introduce fresh variables and rename variables
+            let mut rename_map = VarHMap::new();
+            for var in clause.vars.iter() {
+                let new_idx = vars.next_index();
+                let mut new_info = var.clone();
+                let old_idx = var.idx;
+                new_info.idx = new_idx;
+                vars.push(new_info);
+
+                // a bit redundant
+                args_remap.insert(old_idx, new_idx);
+                rename_map.insert(old_idx, term::var(new_idx, var.typ.clone()));
+            }
+
+            let new_lhs_term = clause.lhs_term.subst_total(&rename_map).unwrap().0;
+            let mut terms = vec![new_lhs_term];
+
             for child_idx in cur.children.iter() {
-                let node = tree.nodes.get(child_idx).unwrap();
-                let predidx = node.args[0] as usize;
+                let next_node = tree.nodes.get(child_idx).unwrap();
+
+                let predidx = next_node.args[0] as usize;
                 let app = &clause.lhs_preds[predidx];
-                let clause = &instance.clauses[node.clsidx];
-                let res = walk(instance, tree, node);
 
-                // sanity check
-                let p = instance.preds.iter().find(|x| x.name == node.head).unwrap();
-                assert_eq!(app.pred, p.idx);
+                let args = app
+                    .args
+                    .iter()
+                    .map(|arg| arg.subst_total(&rename_map).unwrap().0)
+                    .collect();
 
-                let (head, args) = clause.rhs.as_ref().unwrap();
-                assert_eq!(*head, p.idx);
-                assert_eq!(app.args.len(), args.len());
-                let subst_map: VarHMap<_> =
-                    args.iter().cloned().zip(app.args.iter().cloned()).collect();
+                let res = walk(instance, tree, next_node, args, vars);
 
-                let res = res.subst_custom(&subst_map, false);
-                let res = res.expect("subst failed").0;
                 terms.push(res);
             }
-            println!("terms.len(): {}", terms.len());
-            term::and(terms)
+
+            let res = term::and(terms);
+
+            match clause.rhs.as_ref() {
+                Some(pred) => {
+                    let args = &pred.1;
+
+                    // sanity check
+                    #[cfg(debug_assertions)]
+                    {
+                        let cur_pred = pred.0;
+                        let node_pred = instance.preds.iter().find(|x| x.name == cur.head).unwrap();
+                        assert_eq!(cur_pred, node_pred.idx);
+                        assert_eq!(node_pred.sig.len(), cur_args.len());
+                    }
+
+                    assert_eq!(cur_args.len(), args.len());
+                    let subst_map: VarHMap<_> = args
+                        .iter()
+                        .map(|x| args_remap.get(x).unwrap().clone())
+                        .zip(cur_args.iter().cloned())
+                        .collect();
+
+                    res.subst(&subst_map).0
+                }
+                None => res,
+            }
         }
 
+        let mut vars = VarMap::new();
         let node = tree.nodes.get(&tree.root).unwrap();
-        walk(self, &tree, &node)
+        let term = walk(self, &tree, &node, VarMap::new(), &mut vars);
+        CEX { vars, term }
     }
 
     /// Check satisfiability of the query
