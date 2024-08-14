@@ -51,6 +51,81 @@ mod enc;
 mod hyper_res;
 mod spacer;
 
+/// To be removed. Just for checking some behaviors
+fn playground(instance: &Arc<Instance>) {
+    // ~~~playground~~~
+    let decs = dtyp::get_all();
+    assert!(!decs.is_empty(), "no ADT is defined");
+
+    for (name, dtyp) in decs.iter() {
+        println!("dtype name: {}\n{:#?}", name, dtyp);
+    }
+
+    let ty = dtyp::of_constructor("nil").unwrap();
+    println!("ty: {}", ty.name);
+    let idx = dtyp::TPrmIdx::from(0);
+    let ty = &ty.prms[idx];
+    println!("ty: {}", ty);
+    for c in instance.clauses().into_iter() {
+        println!("clause: {:#?}", c.vars);
+    }
+}
+
+pub struct AbsConf<'original> {
+    pub cexs: Vec<chc::CEX>,
+    pub instance: AbsInstance<'original>,
+}
+
+impl<'original> AbsConf<'original> {
+    fn new(original: &'original Instance) -> Res<Self> {
+        let instance = AbsInstance::new(original)?;
+        let cexs = Vec::new();
+        Ok(AbsConf { instance, cexs })
+    }
+    /// To be removed.
+    fn playground(&mut self) -> Res<()> {
+        let instance = &mut self.instance;
+        let mut file = instance.instance_log_files("hoge")?;
+        let last = &instance.clauses[0];
+        let ty = last
+            .vars
+            .iter()
+            .find_map(|x| if x.typ.is_dtyp() { Some(&x.typ) } else { None })
+            .unwrap()
+            .clone();
+        instance.encs.insert(ty.clone(), Enc::len_ilist(ty));
+
+        instance.dump_as_smt2(&mut file, "before", "", false)?;
+        let encoded = instance.encode();
+        encoded.dump_as_smt2(&mut file, "after", "", false)?;
+
+        encoded.dump_as_smt2(&mut file, "w/ tag", "", true)?;
+
+        match encoded.check_sat() {
+            Ok(either::Left(())) => {
+                println!("sat: {:#?}", ());
+            }
+            Ok(either::Right(x)) => {
+                println!("unsat: {x}");
+                let cex = instance.get_cex(&x);
+                println!("cex: {cex}");
+            }
+            Err(e) => {
+                println!("error: {:#?}", e);
+            }
+        }
+        //chc::test_check_sat();
+        Ok(())
+    }
+    fn run(&mut self) -> Res<()> {
+        self.playground()?;
+
+        loop {}
+
+        Ok(())
+    }
+}
+
 /// Abstract ADT terms with integer expressions, and solve the instance by an external solver.
 ///
 /// Returns
@@ -67,61 +142,9 @@ pub fn work(
     _profiler: &Profiler,
 ) -> Res<Option<Either<ConjCandidates, UnsatRes>>> {
     println!("hello");
-    let cls = instance.clauses();
-    let c = cls.iter().next().unwrap();
+    playground(instance);
 
-    let mut adtconf = AbsInstance::new(instance)?;
-    let mut file: std::fs::File = adtconf.instance_log_files("hoge")?;
-
-    instance.dump_as_smt2(&mut file, "hoge", "").unwrap();
-
-    // ~~~playground~~~
-    let decs = dtyp::get_all();
-    assert!(!decs.is_empty(), "no ADT is defined");
-
-    for (name, dtyp) in decs.iter() {
-        println!("dtype name: {}\n{:#?}", name, dtyp);
-    }
-
-    let ty = dtyp::of_constructor("nil").unwrap();
-    println!("ty: {}", ty.name);
-    let idx = dtyp::TPrmIdx::from(0);
-    let ty = &ty.prms[idx];
-    println!("ty: {}", ty);
-
-    for c in instance.clauses().into_iter() {
-        println!("clause: {:#?}", c.vars);
-    }
-
-    let last = &adtconf.clauses[0];
-    let ty = last
-        .vars
-        .iter()
-        .find_map(|x| if x.typ.is_dtyp() { Some(&x.typ) } else { None })
-        .unwrap()
-        .clone();
-    adtconf.encs.insert(ty.clone(), Enc::len_ilist(ty));
-
-    adtconf.dump_as_smt2(&mut file, "before", "", false)?;
-    let encoded = adtconf.encode();
-    encoded.dump_as_smt2(&mut file, "after", "", false)?;
-
-    encoded.dump_as_smt2(&mut file, "w/ tag", "", true)?;
-
-    match encoded.check_sat() {
-        Ok(either::Left(())) => {
-            println!("sat: {:#?}", ());
-        }
-        Ok(either::Right(x)) => {
-            println!("unsat: {x}");
-            let cex = adtconf.get_cex(&x);
-            println!("cex: {cex}");
-        }
-        Err(e) => {
-            println!("error: {:#?}", e);
-        }
-    }
-
-    //chc::test_check_sat();
-    unimplemented!();
+    let mut absconf = AbsConf::new(instance)?;
+    absconf.run()?;
+    unimplemented!()
 }
