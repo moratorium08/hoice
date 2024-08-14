@@ -637,7 +637,7 @@ impl super::spacer::Instance for AbsInstance<'_> {
 
 impl<'a> AbsInstance<'a> {
     /// Obtain a finite expansion of the original CHC instance along with the resolution proof (call-tree).
-    fn get_cex(&self, tree: &CallTree) -> Term {
+    pub fn get_cex(&self, tree: &CallTree) -> Term {
         fn walk(instance: &AbsInstance, tree: &CallTree, cur: &Node) -> Term {
             let clause = &instance.clauses[cur.clsidx];
             let mut terms = vec![clause.lhs_term.clone()];
@@ -677,16 +677,14 @@ impl<'a> AbsInstance<'a> {
 
     /// Check satisfiability of the query
     /// Returns () when it' sat, and a counterexample when it's unsat
-    pub fn check_sat(&self) -> Res<either::Either<(), term::Term>> {
+    pub fn check_sat(&self) -> Res<either::Either<(), CallTree>> {
         let res = super::spacer::run_spacer(self)?;
         match res {
             either::Left(_) => Ok(either::Left(())),
             either::Right(proof) => {
                 let tree = decode_tag(proof)?;
                 println!("{tree}");
-                let cex = self.get_cex(&tree);
-                println!("{}", cex);
-                Ok(either::Right(cex))
+                Ok(either::Right(tree))
             }
         }
     }

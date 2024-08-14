@@ -114,6 +114,8 @@ pub fn work(
         }
         Ok(either::Right(x)) => {
             println!("unsat: {x}");
+            let cex = adtconf.get_cex(&x);
+            println!("cex: {cex}");
         }
         Err(e) => {
             println!("error: {:#?}", e);
