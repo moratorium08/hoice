@@ -33,6 +33,7 @@ pub struct AbsClause {
 }
 
 const TAG_PRED: &str = "tag!";
+const IDX_ARG: &str = "idx!";
 
 /// Mostly taken from clause.rs
 /// The important difference is that the order of the body is preserved
@@ -56,14 +57,25 @@ impl AbsClause {
         write_prd: WritePrd,
         info: bool,
         tag_pred: Option<&str>,
+        // define (idx! Int) as the top-level variable for the clause if true
+        define_idx: bool,
     ) -> IoRes<()>
     where
         W: Write,
         WriteVar: Fn(&mut W, &VarInfo) -> IoRes<()>,
-        WritePrd: Fn(&mut W, PrdIdx, &VarTerms, Option<&term::Bindings>) -> IoRes<()>,
+        WritePrd: Fn(
+            &mut W,
+            // None: do not track the position of applications
+            // Some(Left): head
+            // Some(Right): body. The value represents the position
+            either::Either<(), usize>,
+            PrdIdx,
+            &VarTerms,
+            Option<&term::Bindings>,
+        ) -> IoRes<()>,
     {
         writeln!(w, "({} ", keywords::cmd::assert)?;
-        self.forall_write(w, write_var, write_prd, 2, tag_pred)?;
+        self.forall_write(w, write_var, write_prd, 2, tag_pred, define_idx)?;
         writeln!(w, ")")?;
         Ok(())
     }
@@ -74,11 +86,18 @@ impl AbsClause {
         write_prd: WritePrd,
         indent: usize,
         tag_pred: Option<&str>,
+        define_idx: bool,
     ) -> IoRes<()>
     where
         W: Write,
         WriteVar: Fn(&mut W, &VarInfo) -> IoRes<()>,
-        WritePrd: Fn(&mut W, PrdIdx, &VarTerms, Option<&term::Bindings>) -> IoRes<()>,
+        WritePrd: Fn(
+            &mut W,
+            either::Either<(), usize>,
+            PrdIdx,
+            &VarTerms,
+            Option<&term::Bindings>,
+        ) -> IoRes<()>,
     {
         write!(
             w,
@@ -101,6 +120,11 @@ impl AbsClause {
         if inactive == self.vars.len() {
             write!(w, " (unused Bool)")?
         }
+
+        if define_idx {
+            write!(w, "({IDX_ARG} Int)")?
+        }
+
         writeln!(w, " )")?;
 
         self.qf_write(w, write_var, write_prd, indent + 2, tag_pred)?;
@@ -122,7 +146,13 @@ impl AbsClause {
     where
         W: Write,
         WriteVar: Fn(&mut W, &VarInfo) -> IoRes<()>,
-        WritePrd: Fn(&mut W, PrdIdx, &VarTerms, Option<&term::Bindings>) -> IoRes<()>,
+        WritePrd: Fn(
+            &mut W,
+            either::Either<(), usize>,
+            PrdIdx,
+            &VarTerms,
+            Option<&term::Bindings>,
+        ) -> IoRes<()>,
     {
         let bindings = self.bindings();
         let bindings = bindings.as_ref();
@@ -160,9 +190,9 @@ impl AbsClause {
             if let Some(tag_pred) = tag_pred {
                 write!(w, " {}", tag_pred)?;
             }
-            for app in &self.lhs_preds {
+            for (idx, app) in self.lhs_preds.iter().enumerate() {
                 write!(w, " ")?;
-                write_prd(w, app.pred, &app.args, bindings)?
+                write_prd(w, either::Right(idx), app.pred, &app.args, bindings)?
             }
         }
 
@@ -176,11 +206,12 @@ impl AbsClause {
         if let Some((pred, ref args)) = self.rhs {
             // for simplicity...
             let mut new_args = VarMap::new();
+            // case where tag-encoding is enabled
             for a in args.iter() {
                 new_args.push(term::var(*a, typ::bool()));
             }
             let args = new_args.into();
-            write_prd(w, pred, &args, bindings)?
+            write_prd(w, either::Left(()), pred, &args, bindings)?
         } else {
             write!(w, "false")?
         }
@@ -405,6 +436,11 @@ impl<'a> AbsInstance<'a> {
         for (pred_idx, pred) in self.preds.index_iter() {
             if !self.original[pred_idx].is_defined() {
                 write!(w, "({}\n  {}\n  (", keywords::cmd::dec_fun, pred.name)?;
+                // All predicates take another argument for handling callee
+                // positions
+                if encode_tag {
+                    write!(w, "Int")?;
+                }
                 for typ in &pred.sig {
                     write!(w, " {}", typ)?
                 }
@@ -428,15 +464,22 @@ impl<'a> AbsInstance<'a> {
 
         for (idx, clause) in self.clauses.iter().enumerate() {
             writeln!(w, "\n; Clause #{}", idx)?;
+            let tag_pred = format!("{TAG_PRED}{idx}");
 
             clause.write(
                 w,
                 |w, var_info| write!(w, "{}", var_info.name),
-                |w, p, args, bindings| {
+                |w, fst, p, args, bindings| {
                     if !args.is_empty() {
                         write!(w, "(")?
                     }
                     w.write_all(self.original[p].name.as_bytes())?;
+                    if encode_tag {
+                        match fst {
+                            either::Left(()) => write!(w, " {IDX_ARG}")?,
+                            either::Right(n) => write!(w, " {n}")?,
+                        }
+                    }
                     for arg in args.iter() {
                         write!(w, " ")?;
                         arg.write_with(w, |w, var| write!(w, "{}", clause.vars[var]), bindings)?
@@ -448,7 +491,8 @@ impl<'a> AbsInstance<'a> {
                     }
                 },
                 true,
-                Some(&format!("{TAG_PRED}{idx}")),
+                if encode_tag { Some(&tag_pred) } else { None },
+                true,
             )?;
             writeln!(w)?;
             writeln!(w)?
@@ -602,8 +646,10 @@ impl<'a> AbsInstance<'a> {
             // Correct?
             assert_eq!(clause.lhs_preds.len(), cur.children.len());
 
-            for (child_idx, app) in cur.children.iter().zip(clause.lhs_preds.iter()) {
+            for child_idx in cur.children.iter() {
                 let node = tree.nodes.get(child_idx).unwrap();
+                let predidx = node.args[0] as usize;
+                let app = &clause.lhs_preds[predidx];
                 let clause = &instance.clauses[node.clsidx];
                 let res = walk(instance, tree, node);
 

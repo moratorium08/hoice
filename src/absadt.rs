@@ -106,6 +106,20 @@ pub fn work(
     let encoded = adtconf.encode();
     encoded.dump_as_smt2(&mut file, "after", "", false)?;
 
+    encoded.dump_as_smt2(&mut file, "w/ tag", "", true)?;
+
+    match encoded.check_sat() {
+        Ok(either::Left(())) => {
+            println!("sat: {:#?}", ());
+        }
+        Ok(either::Right(x)) => {
+            println!("unsat: {x}");
+        }
+        Err(e) => {
+            println!("error: {:#?}", e);
+        }
+    }
+
     //chc::test_check_sat();
     unimplemented!();
 }
