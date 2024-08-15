@@ -37,7 +37,7 @@
 //! ## Some Assumptions
 //! - set of ADT does not change from start to end during `work`
 //!   - they are defined as the global hashconsed objects
-use chc::AbsInstance;
+use chc::{AbsInstance, CEX};
 use enc::Enc;
 use hyper_res::ResolutionProof;
 
@@ -117,12 +117,29 @@ impl<'original> AbsConf<'original> {
         //chc::test_check_sat();
         Ok(())
     }
-    fn run(&mut self) -> Res<()> {
+
+    fn gen_enc(&mut self, cex: CEX) -> Res<()> {
+        self.cexs.push(cex);
+        unimplemented!()
+    }
+    fn run(&mut self) -> Res<either::Either<(), ()>> {
         self.playground()?;
 
-        loop {}
-
-        Ok(())
+        let r = loop {
+            let encoded = self.instance.encode();
+            match encoded.check_sat()? {
+                either::Left(()) => {
+                    break either::Left(());
+                }
+                either::Right(x) => {
+                    println!("unsat: {x}");
+                    let cex = self.instance.get_cex(&x);
+                    println!("cex: {cex}");
+                    self.gen_enc(cex)?;
+                }
+            }
+        };
+        Ok(r)
     }
 }
 
