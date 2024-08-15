@@ -378,17 +378,17 @@ impl<'a> AbsInstance<'a> {
         Ok(file)
     }
 
-    pub fn dump_as_smt2<File, Blah, Option>(
+    pub fn dump_as_smt2_with_fun<File, Blah, F>(
         &self,
         w: &mut File,
         blah: Blah,
-        options: Option,
+        gen_additional: F,
         encode_tag: bool,
     ) -> Res<()>
     where
         File: Write,
         Blah: AsRef<str>,
-        Option: AsRef<str>,
+        F: Fn(&mut File) -> Res<()>,
     {
         let blah = blah.as_ref();
 
@@ -398,11 +398,7 @@ impl<'a> AbsInstance<'a> {
         writeln!(w)?;
         writeln!(w, "(set-logic HORN)")?;
         writeln!(w)?;
-
-        let option = options.as_ref();
-        if option != "" {
-            writeln!(w, "{}", option)?
-        }
+        gen_additional(w)?;
         writeln!(w)?;
 
         writeln!(w, "; Datatypes")?;
@@ -501,6 +497,38 @@ impl<'a> AbsInstance<'a> {
         writeln!(w, "\n(check-sat)")?;
 
         Ok(())
+    }
+    pub fn dump_as_smt2<File, Blah>(&self, w: &mut File, blah: Blah, encode_tag: bool) -> Res<()>
+    where
+        File: Write,
+        Blah: AsRef<str>,
+    {
+        self.dump_as_smt2_with_fun(w, blah, |_| Ok(()), encode_tag)
+    }
+    pub fn dump_as_smt2_with_option<File, Blah, Options>(
+        &self,
+        w: &mut File,
+        blah: Blah,
+        options: Options,
+        encode_tag: bool,
+    ) -> Res<()>
+    where
+        File: Write,
+        Blah: AsRef<str>,
+        Options: AsRef<str>,
+    {
+        self.dump_as_smt2_with_fun(
+            w,
+            blah,
+            |w| {
+                let option = options.as_ref();
+                if option != "" {
+                    writeln!(w, "{}", option)?;
+                }
+                Ok(())
+            },
+            encode_tag,
+        )
     }
 }
 
@@ -631,7 +659,7 @@ impl super::spacer::Instance for AbsInstance<'_> {
         File: Write,
         Option: AsRef<str>,
     {
-        self.dump_as_smt2(w, "", options, true)
+        self.dump_as_smt2_with_option(w, "", options, true)
     }
 }
 
@@ -847,9 +875,7 @@ pub fn test_check_sat() {
 
     let my_instance = AbsInstance::new(&instance).unwrap();
     let mut file: std::fs::File = my_instance.instance_log_files("hoge").unwrap();
-    my_instance
-        .dump_as_smt2(&mut file, "no_def", "", true)
-        .unwrap();
+    my_instance.dump_as_smt2(&mut file, "no_def", true).unwrap();
 
     my_instance.check_sat().unwrap();
 }

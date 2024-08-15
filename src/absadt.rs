@@ -95,11 +95,11 @@ impl<'original> AbsConf<'original> {
             .clone();
         instance.encs.insert(ty.clone(), Enc::len_ilist(ty));
 
-        instance.dump_as_smt2(&mut file, "before", "", false)?;
+        instance.dump_as_smt2(&mut file, "before", false)?;
         let encoded = instance.encode();
-        encoded.dump_as_smt2(&mut file, "after", "", false)?;
+        encoded.dump_as_smt2(&mut file, "after", false)?;
 
-        encoded.dump_as_smt2(&mut file, "w/ tag", "", true)?;
+        encoded.dump_as_smt2(&mut file, "w/ tag", true)?;
 
         match encoded.check_sat() {
             Ok(either::Left(())) => {
