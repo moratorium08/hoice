@@ -7,6 +7,8 @@ use crate::info::{Pred, VarInfo};
 
 use super::chc::AbsInstance;
 
+const ENC_TAG = "enc!";
+
 #[derive(Debug, Clone)]
 pub struct Approx {
     /// Definition of the arguments
@@ -111,7 +113,7 @@ pub struct Enc {
 
 impl Enc {
     fn push_approx_typs(&self, varmap: &mut VarMap<Typ>) {
-        for i in 0..self.n_params {
+        for _ in 0..self.n_params {
             varmap.push(typ::int());
         }
     }
@@ -136,6 +138,31 @@ impl Enc {
             n_params: 1,
             approxs,
         }
+    }
+    /*
+    (define-fun-rec 
+   fac ((x Int)) Int
+   (
+    ite (<= x 1) 
+        1 
+        (* x (fac (- x 1)))
+   )
+)
+
+(assert (= (fac 4) 24))
+
+(check-sat)
+
+     */
+    pub fn write<W>(&self, w: &mut W) -> Res<()> {
+        writeln!(w, "; Enc for {}", self.typ)?;
+        writeln!(w, "(define-fun-rec")?;
+        writeln!(w, "{}-{}", sel)
+        for (name, approx) in self.approxs.iter() {
+            writeln!(w, "{}: {}", name, approx)?;
+        }
+        Ok(())
+
     }
 }
 
