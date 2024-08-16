@@ -228,7 +228,6 @@ impl AbsClause {
 pub struct AbsInstance<'a> {
     pub clauses: Vec<AbsClause>,
     pub original: &'a Instance,
-    pub encs: BTreeMap<Typ, Enc>,
     pub preds: Preds,
     log_dir: PathBuf,
 }
@@ -245,7 +244,6 @@ impl AbsInstance<'_> {
             clauses,
             preds,
             original: self.original,
-            encs: self.encs.clone(),
             log_dir: self.log_dir.clone(),
         }
     }
@@ -348,13 +346,11 @@ impl<'a> AbsInstance<'a> {
         clauses.push(query);
 
         let log_dir = Self::gen_logdir(original)?;
-        let encs = BTreeMap::new();
         let preds = original.preds().clone();
         Ok(Self {
             clauses,
             preds,
             original,
-            encs,
             log_dir,
         })
     }

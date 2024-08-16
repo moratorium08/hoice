@@ -120,7 +120,7 @@ impl Enc {
         }
         new_type
     }
-    fn push_approx_typs(&self, varmap: &mut VarMap<Typ>) {
+    pub fn push_approx_typs(&self, varmap: &mut VarMap<Typ>) {
         for _ in 0..self.n_params {
             varmap.push(typ::int());
         }
@@ -201,16 +201,16 @@ impl Enc {
 }
 
 pub struct EncodeCtx<'a> {
-    instance: &'a super::chc::AbsInstance<'a>,
-    introduced: VarHMap<VarMap<VarInfo>>,
+    encs: &'a BTreeMap<Typ, Enc>,
+    pub introduced: VarHMap<VarMap<VarInfo>>,
 }
 
 impl<'a> EncodeCtx<'a> {
-    fn tr_varinfos(&mut self, varmap: &VarInfos) -> VarInfos {
+    pub fn tr_varinfos(&mut self, varmap: &VarInfos) -> VarInfos {
         let mut new_varmap = VarInfos::new();
         let mut orig2approx_var = VarHMap::new();
         for v in varmap.iter() {
-            if let Some(enc) = self.instance.encs.get(&v.typ) {
+            if let Some(enc) = self.encs.get(&v.typ) {
                 let introduced = enc.gen_typ(&mut new_varmap, &v.name);
                 orig2approx_var.insert(v.idx, introduced);
             } else {
@@ -221,9 +221,9 @@ impl<'a> EncodeCtx<'a> {
         self.introduced = orig2approx_var;
         new_varmap
     }
-    pub fn new(instance: &'a super::chc::AbsInstance<'a>) -> Self {
+    pub fn new(encs: &'a BTreeMap<Typ, Enc>) -> Self {
         Self {
-            instance,
+            encs,
             introduced: VarHMap::new(),
         }
     }
@@ -233,7 +233,7 @@ impl<'a> EncodeCtx<'a> {
             val::RVal::B(_) | val::RVal::I(_) | val::RVal::R(_) | val::RVal::Array { .. } => {
                 vec![term::cst(val.clone())]
             }
-            val::RVal::DTypNew { typ, name, args } => match self.instance.encs.get(typ) {
+            val::RVal::DTypNew { typ, name, args } => match self.encs.get(typ) {
                 Some(enc) => {
                     let approx = enc.approxs.get(name).unwrap();
                     let mut new_args = Vec::new();
@@ -312,7 +312,7 @@ impl<'a> EncodeCtx<'a> {
         }
     }
     fn handle_dtypnew(&self, typ: &Typ, name: &str, argss: Vec<Vec<Term>>) -> Vec<Term> {
-        let enc = if let Some(enc) = self.instance.encs.get(typ) {
+        let enc = if let Some(enc) = self.encs.get(typ) {
             enc
         } else {
             let mut res = Vec::new();
@@ -384,69 +384,5 @@ impl<'a> EncodeCtx<'a> {
                 unimplemented!()
             }
         }
-    }
-}
-
-impl<'a> AbsInstance<'a> {
-    pub fn encode_clause(&self, c: &super::chc::AbsClause) -> super::chc::AbsClause {
-        println!("hi: {}", c.lhs_term);
-        let mut ctx = EncodeCtx::new(self);
-        let new_vars = ctx.tr_varinfos(&c.vars);
-        let lhs_term = term::and(ctx.encode(&c.lhs_term));
-        let mut lhs_preds = Vec::with_capacity(c.lhs_preds.len());
-        for lhs_app in c.lhs_preds.iter() {
-            let mut new_args = VarMap::new();
-            for arg in lhs_app.args.iter() {
-                for encoded in ctx.encode(arg) {
-                    new_args.push(encoded);
-                }
-            }
-            lhs_preds.push(super::chc::PredApp {
-                pred: lhs_app.pred,
-                args: new_args.into(),
-            });
-        }
-        let rhs = c.rhs.as_ref().map(|(pred, args)| {
-            let mut new_args = Vec::new();
-            for arg in args.iter() {
-                if let Some(approx) = ctx.introduced.get(arg) {
-                    for approx_arg in approx.iter() {
-                        new_args.push(approx_arg.idx);
-                    }
-                } else {
-                    new_args.push(arg.clone());
-                }
-            }
-            (*pred, new_args)
-        });
-        println!("transformed: {}", lhs_term);
-        super::chc::AbsClause {
-            vars: new_vars,
-            lhs_term,
-            lhs_preds,
-            rhs,
-        }
-    }
-    fn encode_sig(&self, sig: &VarMap<Typ>) -> VarMap<Typ> {
-        let mut new_sig = VarMap::new();
-        for ty in sig.iter() {
-            if let Some(enc) = self.encs.get(&ty) {
-                enc.push_approx_typs(&mut new_sig)
-            } else {
-                new_sig.push(ty.clone());
-            }
-        }
-        new_sig
-    }
-
-    fn encode_pred(&self, p: &Pred) -> Pred {
-        let mut pred = p.clone();
-        pred.sig = self.encode_sig(&pred.sig);
-        pred
-    }
-    pub fn encode(&self) -> Self {
-        let clauses = self.clauses.iter().map(|c| self.encode_clause(c)).collect();
-        let preds = self.preds.iter().map(|p| self.encode_pred(p)).collect();
-        self.clone_with_clauses(clauses, preds)
     }
 }
