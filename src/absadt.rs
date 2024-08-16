@@ -41,6 +41,8 @@ use chc::{AbsInstance, CEX};
 use enc::Enc;
 use hyper_res::ResolutionProof;
 
+use crate::common::{smt::FullParser as Parser, *};
+
 use crate::common::*;
 use crate::term::Term;
 use crate::unsat_core::UnsatRes;
@@ -74,13 +76,20 @@ fn playground(instance: &Arc<Instance>) {
 pub struct AbsConf<'original> {
     pub cexs: Vec<chc::CEX>,
     pub instance: AbsInstance<'original>,
+    pub solver: Solver<Parser>,
 }
 
 impl<'original> AbsConf<'original> {
     fn new(original: &'original Instance) -> Res<Self> {
         let instance = AbsInstance::new(original)?;
         let cexs = Vec::new();
-        Ok(AbsConf { instance, cexs })
+        let solver = conf.solver.spawn("teacher", Parser, original)?;
+
+        Ok(AbsConf {
+            instance,
+            cexs,
+            solver,
+        })
     }
     /// To be removed.
     fn playground(&mut self) -> Res<()> {
@@ -120,6 +129,7 @@ impl<'original> AbsConf<'original> {
 
     fn gen_enc(&mut self, cex: CEX) -> Res<()> {
         self.cexs.push(cex);
+        let model = self.instance.encs
         unimplemented!()
     }
     fn run(&mut self) -> Res<either::Either<(), ()>> {

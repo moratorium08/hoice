@@ -1,13 +1,11 @@
-use std::env::Args;
-
-use libc::qsort;
+use crate::common::{smt::FullParser as Parser, *};
 
 use crate::common::*;
 use crate::info::{Pred, VarInfo};
 
 use super::chc::AbsInstance;
 
-const ENC_TAG = "enc!";
+const ENC_TAG: &str = "enc!";
 
 #[derive(Debug, Clone)]
 pub struct Approx {
@@ -112,6 +110,16 @@ pub struct Enc {
 }
 
 impl Enc {
+    fn generate_fun_name(&self) -> String {
+        let s = self.typ.to_string();
+        let mut new_type = String::with_capacity(s.capacity());
+        for c in s.chars() {
+            if c.is_alphanumeric() {
+                new_type.push(c);
+            }
+        }
+        new_type
+    }
     fn push_approx_typs(&self, varmap: &mut VarMap<Typ>) {
         for _ in 0..self.n_params {
             varmap.push(typ::int());
@@ -140,29 +148,55 @@ impl Enc {
         }
     }
     /*
-    (define-fun-rec 
-   fac ((x Int)) Int
-   (
-    ite (<= x 1) 
-        1 
-        (* x (fac (- x 1)))
-   )
-)
+        (define-fun-rec
+       fac ((x Int)) Int
+       (
+        ite (<= x 1)
+            1
+            (* x (fac (- x 1)))
+       )
+    )
 
-(assert (= (fac 4) 24))
+    (assert (= (fac 4) 24))
 
-(check-sat)
+    (check-sat)
 
-     */
-    pub fn write<W>(&self, w: &mut W) -> Res<()> {
+         */
+    pub fn write<W>(&self, w: &mut W) -> Res<()>
+    where
+        W: std::io::Write,
+    {
         writeln!(w, "; Enc for {}", self.typ)?;
-        writeln!(w, "(define-fun-rec")?;
-        writeln!(w, "{}-{}", sel)
-        for (name, approx) in self.approxs.iter() {
-            writeln!(w, "{}: {}", name, approx)?;
-        }
-        Ok(())
+        for i in 0..self.n_params {
+            writeln!(w, "(define-fun-rec")?;
+            writeln!(w, "{}-{}-{}", ENC_TAG, self.generate_fun_name(), i)?;
+            writeln!(w, "((x {}))", self.typ)?;
+            writeln!(w, "\n) Int")?;
 
+            println!("current datatype: {}", self.typ);
+            for (tag, approx) in self.approxs.iter() {
+                println!("(ite (is-{} x) )", tag);
+            }
+        }
+
+        Ok(())
+    }
+    /// Assumption: Data types used in cex are already defined.
+    pub fn define_enc_fun(&self, solver: &mut Solver<Parser>) -> Res<()> {
+        let mut funs = Vec::with_capacity(self.n_params);
+        let base_fun_name = self.generate_fun_name();
+        let typ = self.typ.to_string();
+        for i in 0..self.n_params {
+            let name = format!("{}-{}-{}", ENC_TAG, base_fun_name, i);
+            let args = vec![("x", &typ)];
+            let ret = "Int";
+            // todo
+            let body = "1";
+            funs.push((name, args, ret, body));
+        }
+        solver.define_funs_rec(funs)?;
+
+        Ok(())
     }
 }
 
