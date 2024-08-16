@@ -51,7 +51,6 @@ impl Approx {
         let l = term::var(l_idx, typ::int());
         let one = term::cst(val::int(1));
         let l_plus_one = term::app(Op::Add, vec![l, one]);
-        println!("len_cons: {}", l_plus_one);
         Self {
             args: infos,
             terms: vec![l_plus_one],
@@ -67,7 +66,6 @@ impl Approx {
         let info = VarInfo::new("x".to_string(), typ::int(), x_idx);
         infos.push(info);
 
-        println!("len_nil: {}", term::int_zero());
         // 0
         Self {
             args: infos,
@@ -75,13 +73,8 @@ impl Approx {
         }
     }
     pub fn apply(&self, arg_terms: Vec<Term>) -> Vec<Term> {
-        println!("apply");
-        for arg in arg_terms.iter() {
-            println!("{}", arg);
-        }
         let mut res = Vec::with_capacity(self.terms.len());
         for term in self.terms.iter() {
-            println!("try subst: {}", term);
             let subst_map: VarHMap<_> = self
                 .args
                 .iter()
@@ -181,7 +174,9 @@ impl Enc {
 
         Ok(())
     }
-    /// Assumption: Data types used in cex are already defined.
+    /// Define encoding functions in the solver.
+    ///
+    /// Assumption: Data type `self.typ` has already been defined before.
     pub fn define_enc_fun(&self, solver: &mut Solver<Parser>) -> Res<()> {
         let mut funs = Vec::with_capacity(self.n_params);
         let base_fun_name = self.generate_fun_name();

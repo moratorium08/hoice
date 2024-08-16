@@ -16,6 +16,7 @@ use crate::term::Term;
 
 use super::enc::{Approx, Enc};
 use super::hyper_res;
+use crate::common::{smt::FullParser as Parser, *};
 use hyper_res::ResolutionProof;
 
 use std::path::PathBuf;
@@ -424,7 +425,6 @@ impl<'a> AbsInstance<'a> {
         // writeln!(w)?;
         // writeln!(w)?;
 
-        println!("len_preds: {}", self.preds.len());
         for (pred_idx, pred) in self.preds.index_iter() {
             if !self.original[pred_idx].is_defined() {
                 write!(w, "({}\n  {}\n  (", keywords::cmd::dec_fun, pred.name)?;
@@ -547,7 +547,6 @@ impl Node {
     /// We retrieve the clause index from the encoded-tag predicate.
     /// `cls_map` is a map from node index of the refutation proof to the clause index in the CHC instance.
     fn tr_from_hyper_res(mut n: hyper_res::Node, cls_map: &HashMap<usize, usize>) -> Option<Self> {
-        println!("tr_from_hyper_res: {} {:?}", n.head, n.children);
         let idx = n.children.iter().enumerate().find_map(|(i, x)| {
             if cls_map.contains_key(x) {
                 Some(i)
@@ -671,6 +670,12 @@ impl fmt::Display for CEX {
             write!(f, " v_{}: {},", x.idx, x.typ)?;
         }
         write!(f, ". {}", self.term)
+    }
+}
+
+impl CEX {
+    pub fn define_assert(&self, solver: &mut Solver<Parser>) -> Res<()> {
+        unimplemented!()
     }
 }
 

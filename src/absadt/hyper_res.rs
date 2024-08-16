@@ -188,7 +188,6 @@ impl HyperResolutionParser {
         }
     }
     fn parse_head(&mut self, head: &Value) -> Res<(String, Vec<V>)> {
-        println!("{:#?}", head);
         match head {
             Value::Cons(cons) => {
                 let mut cons_iter = cons.iter();
@@ -206,7 +205,6 @@ impl HyperResolutionParser {
         }
     }
     fn parse_asserted(&mut self, expr: &Value) -> Res<()> {
-        println!("asserted: {expr}");
         Ok(())
     }
     fn as_hyper_res(&self, c: &Cons) -> Option<Vec<i64>> {
@@ -277,18 +275,18 @@ impl HyperResolutionParser {
             Ok(v) => self.parse_expr(&v)?,
             Err(e) => bail!("parse error: {}", e),
         };
-        for x in p.iter() {
-            print!("{}, {}(", x.id, x.head);
-            for y in x.arguments.iter() {
-                print!("{},", y);
-            }
-            print!("): ");
+        // for x in p.iter() {
+        //     print!("{}, {}(", x.id, x.head);
+        //     for y in x.arguments.iter() {
+        //         print!("{},", y);
+        //     }
+        //     print!("): ");
 
-            for y in x.children.iter() {
-                print!(" {}", y);
-            }
-            println!()
-        }
+        //     for y in x.children.iter() {
+        //         print!(" {}", y);
+        //     }
+        //     println!()
+        // }
         Ok(p)
     }
 }

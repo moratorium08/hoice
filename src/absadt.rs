@@ -81,6 +81,11 @@ pub struct AbsConf<'original> {
     pub encs: BTreeMap<Typ, Enc>,
 }
 
+/// Preprocess the instance for AbsAdt.
+///
+/// The only thing to do is to add all missing selectors for ADTs
+/// This will change the global state.
+fn fix_dtyp() {}
 impl<'original> AbsConf<'original> {
     fn new(original: &'original Instance) -> Res<Self> {
         let instance = AbsInstance::new(original)?;
@@ -97,6 +102,14 @@ impl<'original> AbsConf<'original> {
     }
     /// To be removed.
     fn playground(&mut self) -> Res<()> {
+        println!("playground");
+        let list = dtyp::get("Lst2").unwrap();
+        let slcs = list.selectors_of("cons2").unwrap();
+
+        println!("selectors:");
+        for (s, t) in slcs {
+            println!("{}: {}", s, t);
+        }
         let mut file = self.instance.instance_log_files("hoge")?;
         let last = &self.instance.clauses[0];
         let ty = last
@@ -126,18 +139,49 @@ impl<'original> AbsConf<'original> {
                 println!("error: {:#?}", e);
             }
         }
+
         //chc::test_check_sat();
         Ok(())
     }
 
+    /// Define encoding functions
+    ///
+    /// Assumption: Data types are all defined.
+    fn define_enc_funs(&mut self) -> Res<()> {
+        for (ty, enc) in self.encs.iter() {
+            enc.define_enc_fun(&mut self.solver)?;
+        }
+        Ok(())
+    }
+
+    /// Define data types
+    fn define_datatypes(&mut self) -> Res<()> {
+        unimplemented!()
+    }
+
+    fn get_model(&mut self, cex: &CEX) -> Res<Option<Cex>> {
+        self.solver.reset()?;
+        self.define_datatypes()?;
+        self.define_enc_funs()?;
+        cex.define_assert(&mut self.solver)?;
+        let b = self.solver.check_sat()?;
+        if b {
+            return Ok(None);
+        }
+        let model = self.solver.get_model()?;
+        let model = Parser.fix_model(model)?;
+        let cex = Cex::of_model(&cex.vars, model, true)?;
+        Ok(Some(cex))
+    }
+
     fn gen_enc(&mut self, cex: CEX) -> Res<()> {
-        self.cexs.push(cex);
-        //let model = self.encs;
+        let model = self.get_model(&cex)?.unwrap();
+        println!("{}", model);
+        //  self.cexs.push(cex);
         unimplemented!()
     }
     fn run(&mut self) -> Res<either::Either<(), ()>> {
-        self.playground()?;
-
+        self.playground().unwrap();
         let r = loop {
             let encoded = self.encode();
             match encoded.check_sat()? {
@@ -246,7 +290,7 @@ pub fn work(
     _profiler: &Profiler,
 ) -> Res<Option<Either<ConjCandidates, UnsatRes>>> {
     println!("hello");
-    playground(instance);
+    //playground(instance);
 
     let mut absconf = AbsConf::new(instance)?;
     absconf.run()?;
