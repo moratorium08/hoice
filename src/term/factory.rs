@@ -823,6 +823,14 @@ where
     })
 }
 
+#[inline]
+pub fn unsafe_fun<S>(name: S, args: Vec<Term>, ret_ty: Typ) -> Term
+where
+    S: Into<String>,
+{
+    factory.mk(RTerm::new_fun(ret_ty, name, args))
+}
+
 /// Creates an operator application.
 ///
 /// This is the function all operator application functions end up calling.

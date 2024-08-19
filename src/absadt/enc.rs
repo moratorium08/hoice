@@ -199,9 +199,11 @@ impl Enc {
     pub fn encode_var_with_rdf(&self, varidx: &VarIdx) -> Vec<Term> {
         (0..self.n_params)
             .map(|i| {
-                term::fun(
-                    self.get_ith_enc_rdf_name(i),
+                let name = self.get_ith_enc_rdf_name(i);
+                term::unsafe_fun(
+                    name,
                     vec![term::var(varidx.clone(), self.typ.clone())],
+                    typ::int(),
                 )
             })
             .collect()
