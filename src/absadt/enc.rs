@@ -111,7 +111,7 @@ impl Enc {
                 new_type.push(c);
             }
         }
-        new_type
+        format!("{}-{}", ENC_TAG, new_type)
     }
     pub fn push_approx_typs(&self, varmap: &mut VarMap<Typ>) {
         for _ in 0..self.n_params {
@@ -174,15 +174,17 @@ impl Enc {
 
         Ok(())
     }
+    fn get_ith_enc_rdf_name(&self, i: usize) -> String {
+        format!("{}-{}", self.generate_fun_name(), i)
+    }
     /// Define encoding functions in the solver.
     ///
     /// Assumption: Data type `self.typ` has already been defined before.
     pub fn define_enc_fun(&self, solver: &mut Solver<Parser>) -> Res<()> {
         let mut funs = Vec::with_capacity(self.n_params);
-        let base_fun_name = self.generate_fun_name();
         let typ = self.typ.to_string();
         for i in 0..self.n_params {
-            let name = format!("{}-{}-{}", ENC_TAG, base_fun_name, i);
+            let name = self.get_ith_enc_rdf_name(i);
             let args = vec![("x", &typ)];
             let ret = "Int";
             // todo
@@ -193,15 +195,27 @@ impl Enc {
 
         Ok(())
     }
+
+    pub fn encode_var_with_rdf(&self, varidx: &VarIdx) -> Vec<Term> {
+        (0..self.n_params)
+            .map(|i| {
+                term::fun(
+                    self.get_ith_enc_rdf_name(i),
+                    vec![term::var(varidx.clone(), self.typ.clone())],
+                )
+            })
+            .collect()
+    }
 }
 
 pub struct EncodeCtx<'a> {
     encs: &'a BTreeMap<Typ, Enc>,
-    pub introduced: VarHMap<VarMap<VarInfo>>,
 }
 
 impl<'a> EncodeCtx<'a> {
-    pub fn tr_varinfos(&mut self, varmap: &VarInfos) -> VarInfos {
+    /// The first item of the returned tuple is the new vector of variables
+    /// The second is the map from the original variable to approximated variables
+    pub fn tr_varinfos(&self, varmap: &VarInfos) -> (VarInfos, VarHMap<VarMap<VarInfo>>) {
         let mut new_varmap = VarInfos::new();
         let mut orig2approx_var = VarHMap::new();
         for v in varmap.iter() {
@@ -210,17 +224,15 @@ impl<'a> EncodeCtx<'a> {
                 orig2approx_var.insert(v.idx, introduced);
             } else {
                 // base types (not approximated)
-                new_varmap.push(v.clone());
+                let mut v = v.clone();
+                v.idx = new_varmap.next_index();
+                new_varmap.push(v);
             }
         }
-        self.introduced = orig2approx_var;
-        new_varmap
+        (new_varmap, orig2approx_var)
     }
     pub fn new(encs: &'a BTreeMap<Typ, Enc>) -> Self {
-        Self {
-            encs,
-            introduced: VarHMap::new(),
-        }
+        Self { encs }
     }
     fn encode_val(&self, val: &Val) -> Vec<Term> {
         match val.get() {
@@ -272,15 +284,19 @@ impl<'a> EncodeCtx<'a> {
     //         | Op::Select => panic!("invalid operator for ADT: {}", op),
     //     }
     // }
-    fn handle_app(
+    fn handle_app<EncodeVar>(
         &self,
         typ: &Typ,
         op: &Op,
         args: impl IntoIterator<Item = &'a Term>,
-    ) -> Vec<Term> {
+        encode_var: &EncodeVar,
+    ) -> Vec<Term>
+    where
+        EncodeVar: Fn(&'a Typ, &'a VarIdx) -> Vec<Term>,
+    {
         let argss = args
             .into_iter()
-            .map(|arg| self.encode(arg))
+            .map(|arg| self.encode(arg, encode_var))
             .collect::<Vec<_>>();
         if argss.len() == 0 {
             return vec![term::app(op.clone(), Vec::new())];
@@ -326,25 +342,21 @@ impl<'a> EncodeCtx<'a> {
     fn handle_dtyptst(&self, typ: &Typ, name: &str, argss: &Vec<Vec<Term>>) -> Vec<Term> {
         unimplemented!()
     }
-    pub fn encode(&self, term: &Term) -> Vec<Term> {
+    pub fn encode<EncodeVar>(&self, term: &'a Term, encode_var: &EncodeVar) -> Vec<Term>
+    where
+        EncodeVar: Fn(&'a Typ, &'a VarIdx) -> Vec<Term>,
+    {
         match term.get() {
             RTerm::Var(x, y) => {
-                if let Some(x) = self.introduced.get(y) {
-                    let mut res = Vec::new();
-                    for y in x.iter() {
-                        res.push(term::var(*y.idx, y.typ.clone()));
-                    }
-                    res
-                } else {
-                    vec![term.clone()]
-                }
+                encode_var(x, y)
+
             }
             RTerm::Cst(val) => self.encode_val(val),
-            RTerm::App { typ, op, args, .. } => self.handle_app(typ, op, args),
+            RTerm::App { typ, op, args, .. } => self.handle_app(typ, op, args, encode_var),
             RTerm::DTypNew {
                 typ, name, args, ..
             } => {
-                let argss = args.iter().map(|arg| self.encode(arg)).collect::<Vec<_>>();
+                let argss = args.iter().map(|arg| self.encode(arg, encode_var)).collect::<Vec<_>>();
                 self.handle_dtypnew(typ, name, argss)
             }
             RTerm::DTypSlc {
@@ -358,7 +370,7 @@ impl<'a> EncodeCtx<'a> {
                 unimplemented!()
             }
             RTerm::CArray { term: t, typ, .. } => {
-                let terms = self.encode(t);
+                let terms = self.encode(t, encode_var);
                 let mut res = Vec::with_capacity(terms.len());
                 for t in terms {
                     res.push(term::cst_array(typ.clone(), t));

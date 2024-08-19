@@ -81,16 +81,11 @@ pub struct AbsConf<'original> {
     pub encs: BTreeMap<Typ, Enc>,
 }
 
-/// Preprocess the instance for AbsAdt.
-///
-/// The only thing to do is to add all missing selectors for ADTs
-/// This will change the global state.
-fn fix_dtyp() {}
 impl<'original> AbsConf<'original> {
     fn new(original: &'original Instance) -> Res<Self> {
         let instance = AbsInstance::new(original)?;
         let cexs = Vec::new();
-        let solver = conf.solver.spawn("teacher", Parser, original)?;
+        let solver = conf.solver.spawn("absadt", Parser, original)?;
         let encs = BTreeMap::new();
 
         Ok(AbsConf {
@@ -156,14 +151,15 @@ impl<'original> AbsConf<'original> {
 
     /// Define data types
     fn define_datatypes(&mut self) -> Res<()> {
-        unimplemented!()
+        dtyp::write_all(&mut self.solver, "")?;
+        Ok(())
     }
 
     fn get_model(&mut self, cex: &CEX) -> Res<Option<Cex>> {
         self.solver.reset()?;
         self.define_datatypes()?;
         self.define_enc_funs()?;
-        cex.define_assert(&mut self.solver)?;
+        cex.define_assert(&mut self.solver, &self.encs)?;
         let b = self.solver.check_sat()?;
         if b {
             return Ok(None);
@@ -203,14 +199,25 @@ impl<'original> AbsConf<'original> {
 impl<'a> AbsConf<'a> {
     pub fn encode_clause(&self, c: &chc::AbsClause) -> chc::AbsClause {
         println!("hi: {}", c.lhs_term);
-        let mut ctx = enc::EncodeCtx::new(&self.encs);
-        let new_vars = ctx.tr_varinfos(&c.vars);
-        let lhs_term = term::and(ctx.encode(&c.lhs_term));
+        let ctx = enc::EncodeCtx::new(&self.encs);
+        let (new_vars, introduced) = ctx.tr_varinfos(&c.vars);
+        let encode_var = |typ: &Typ, var| {
+            if let Some(x) = introduced.get(var) {
+                let mut res = Vec::new();
+                for y in x.iter() {
+                    res.push(term::var(*y.idx, y.typ.clone()));
+                }
+                res
+            } else {
+                vec![term::var(*var, typ.clone())]
+            }
+        };
+        let lhs_term = term::and(ctx.encode(&c.lhs_term, &encode_var));
         let mut lhs_preds = Vec::with_capacity(c.lhs_preds.len());
         for lhs_app in c.lhs_preds.iter() {
             let mut new_args = VarMap::new();
             for arg in lhs_app.args.iter() {
-                for encoded in ctx.encode(arg) {
+                for encoded in ctx.encode(arg, &encode_var) {
                     new_args.push(encoded);
                 }
             }
@@ -222,7 +229,7 @@ impl<'a> AbsConf<'a> {
         let rhs = c.rhs.as_ref().map(|(pred, args)| {
             let mut new_args = Vec::new();
             for arg in args.iter() {
-                if let Some(approx) = ctx.introduced.get(arg) {
+                if let Some(approx) = introduced.get(arg) {
                     for approx_arg in approx.iter() {
                         new_args.push(approx_arg.idx);
                     }

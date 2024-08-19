@@ -14,7 +14,7 @@ use crate::common::*;
 use crate::info::VarInfo;
 use crate::term::Term;
 
-use super::enc::{Approx, Enc};
+use super::enc::{self, Approx, Enc};
 use super::hyper_res;
 use crate::common::{smt::FullParser as Parser, *};
 use hyper_res::ResolutionProof;
@@ -674,8 +674,28 @@ impl fmt::Display for CEX {
 }
 
 impl CEX {
-    pub fn define_assert(&self, solver: &mut Solver<Parser>) -> Res<()> {
-        unimplemented!()
+    pub fn define_assert(&self, solver: &mut Solver<Parser>, encs: &BTreeMap<Typ, Enc>) -> Res<()> {
+        for var in self.vars.iter() {
+            let mut varset = VarSet::new();
+            varset.insert(var.idx);
+            // only declare the variables used in self.term
+            if self.term.mentions_one_of(&varset) {
+                solver.declare_const(&format!("v_{}", var.idx), &var.typ.to_string())?;
+            }
+        }
+
+        let enc_ctx = enc::EncodeCtx::new(encs);
+        let f = |typ: &Typ, var| match encs.get(&typ) {
+            Some(enc) => enc.encode_var_with_rdf(var),
+            None => vec![term::var(*var, typ.clone())],
+        };
+        let terms = enc_ctx.encode(&self.term, &f);
+
+        let t = term::and(terms);
+
+        write!(solver, "(assert {})", t)?;
+
+        Ok(())
     }
 }
 
