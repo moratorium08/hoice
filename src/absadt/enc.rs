@@ -179,35 +179,89 @@ impl Enc {
     }
 
     /*
-    enc-list-int l = (ite (is-nil l) 0 (ite (is-cons l) (+ 1 (enc-list-int (tail l)))))
-     */
-    fn gen_body(&self, typ: &DTyp) -> Term {
-        for (tag, approx) in self.approxs.iter() {
-            let args = typ.news.get(&tag).unwrap();
-            let mut new_args = Vec::new();
-            for (_, in args.iter() {
+        enc-list-int l = (ite (is-nil l) 0 (ite (is-cons l) (+ 1 (enc-list-int (tail l)))))
+        enc-list-int l = (ite (= nil l) 0 (ite (is-cons l) (+ 1 (enc-list-int (tail l)))))
+        enc-list-int-0 l = (ite (= (cons x l2) l) (+ 1 (enc-list-int l2)) 0) ←できない？
+        (define-fun-rec len_hoice_reserved_fun
+      ( (v_0 IList) ) Int
+      (ite (not (is-insert v_0)) 0 (+ 1 (len_hoice_reserved_fun (tail v_0))))
+    )
+         */
 
+    fn gen_rdf_body(
+        &self,
+        ctx: &EncodeCtx,
+        tag: &str,
+        cont: Option<Vec<Term>>,
+        target_data: Term,
+    ) -> Vec<Term> {
+        // 1. main part
+        let mut args = Vec::new();
+        let (ty, prms) = self.typ.dtyp_inspect().unwrap();
+
+        for (sel, ty) in ty.selectors_of(tag).unwrap().iter() {
+            let ty = ty.to_type(Some(prms)).unwrap();
+            // Example: (head l)
+            let term = term::dtyp_slc(ty.clone(), sel, target_data.clone());
+            println!("ty: {}", ty);
+            match ctx.encs.get(&ty) {
+                Some(enc_for_ty) => {
+                    for i in 0..enc_for_ty.n_params {
+                        // Example: (enc-list-int-0 (tail l))
+                        let f = enc_for_ty.get_ith_enc_rdf_name(i);
+                        let arg = term::unsafe_fun(f, vec![term.clone()], typ::int());
+                        args.push(arg);
+                    }
+                }
+                None => {
+                    // base types
+                    args.push(term);
+                }
             }
-
         }
-        unimplemented!()
+        // apply approx to [(enc-list-int-0 (tail l)); enc-list-int-1 (tail l))];
+
+        let res = self.approxs.get(tag).unwrap().apply(args);
+        let cont = match cont {
+            Some(cont) => cont,
+            None => return res,
+        };
+        assert_eq!(res.len(), cont.len());
+
+        // 2. ite-part if not last
+        // (ite (is-<tag> target_data) res cont)
+        let check = term::dtyp_tst(tag, target_data);
+        res.into_iter()
+            .zip(cont.into_iter())
+            .map(|(res, cont)| term::app(Op::Ite, vec![check.clone(), res, cont]))
+            .collect()
     }
 
     /// Define encoding functions in the solver.
     ///
     /// Assumption: Data type `self.typ` has already been defined before.
-    pub fn define_enc_fun(&self, solver: &mut Solver<Parser>) -> Res<()> {
-        let mut funs = Vec::with_capacity(self.n_params);
-        let typ = self.typ.to_string();
-        for i in 0..self.n_params {
-            let name = self.get_ith_enc_rdf_name(i);
-            let args = vec![("v_0", &typ)];
-            let ret = "Int";
-            // todo
-            let body = "1";
-            funs.push((name, args, ret, body));
+    pub fn generate_enc_fun(
+        &self,
+        ctx: &EncodeCtx,
+        funs: &mut Vec<(String, Typ, Term)>,
+    ) -> Res<()> {
+        let mut constructors = self.typ.dtyp_inspect().unwrap().0.news.keys();
+
+        let target_data = term::var(VarIdx::new(0), self.typ.clone());
+
+        let mut terms =
+            self.gen_rdf_body(ctx, constructors.next().unwrap(), None, target_data.clone());
+
+        while let Some(constructor) = constructors.next() {
+            terms = self.gen_rdf_body(ctx, constructor, Some(terms), target_data.clone())
         }
-        solver.define_funs_rec(funs)?;
+
+        assert_eq!(terms.len(), self.n_params);
+
+        for (idx, term) in terms.into_iter().enumerate() {
+            let name = self.get_ith_enc_rdf_name(idx);
+            funs.push((name, self.typ.clone(), term))
+        }
 
         Ok(())
     }

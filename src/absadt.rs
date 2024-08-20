@@ -143,9 +143,18 @@ impl<'original> AbsConf<'original> {
     ///
     /// Assumption: Data types are all defined.
     fn define_enc_funs(&mut self) -> Res<()> {
-        for (ty, enc) in self.encs.iter() {
-            enc.define_enc_fun(&mut self.solver)?;
+        let ctx = enc::EncodeCtx::new(&self.encs);
+        let mut funs = Vec::new();
+        for enc in self.encs.values() {
+            enc.generate_enc_fun(&ctx, &mut funs)?;
         }
+
+        let funs_strs = funs.into_iter().map(|(funname, ty, term)| {
+            let args = vec![("v_0", ty.to_string())];
+            let body = term.to_string();
+            (funname, args, "Int", body)
+        });
+        self.solver.define_funs_rec(funs_strs)?;
         Ok(())
     }
 
