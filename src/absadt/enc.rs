@@ -62,7 +62,7 @@ impl Approx {
     pub fn len_nil() -> Self {
         let mut infos = VarInfos::new();
 
-        let x_idx = infos.next_index();
+        // let x_idx = infos.next_index();
         // let info = VarInfo::new("x".to_string(), typ::int(), x_idx);
         // infos.push(info);
 
@@ -82,10 +82,6 @@ impl Approx {
                 .zip(arg_terms.iter().cloned())
                 .collect();
             res.push(term.subst_total(&subst_map).unwrap().0);
-        }
-        println!("res");
-        for t in res.iter() {
-            println!("{}", t);
         }
         res
     }
@@ -203,7 +199,6 @@ impl Enc {
             let ty = ty.to_type(Some(prms)).unwrap();
             // Example: (head l)
             let term = term::dtyp_slc(ty.clone(), sel, target_data.clone());
-            println!("ty: {}", ty);
             match ctx.encs.get(&ty) {
                 Some(enc_for_ty) => {
                     for i in 0..enc_for_ty.n_params {

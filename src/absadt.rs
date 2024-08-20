@@ -52,6 +52,7 @@ use std::path::PathBuf;
 mod chc;
 mod enc;
 mod hyper_res;
+mod learn;
 mod spacer;
 
 /// To be removed. Just for checking some behaviors
@@ -170,7 +171,7 @@ impl<'original> AbsConf<'original> {
         self.define_enc_funs()?;
         cex.define_assert(&mut self.solver, &self.encs)?;
         let b = self.solver.check_sat()?;
-        if b {
+        if !b {
             return Ok(None);
         }
         let model = self.solver.get_model()?;
@@ -180,10 +181,16 @@ impl<'original> AbsConf<'original> {
     }
 
     fn gen_enc(&mut self, cex: CEX) -> Res<()> {
-        let model = self.get_model(&cex)?.unwrap();
-        println!("{}", model);
-        //  self.cexs.push(cex);
-        unimplemented!()
+        let mut models = Vec::new();
+
+        loop {
+            let model = self.get_model(&cex)?.unwrap();
+            println!("model: {}", model);
+            models.push(model);
+            //  self.cexs.push(cex);
+            let learn_ctx = learn::LearnCtx::new(&mut self.encs, &cex, &models);
+            learn_ctx.work()?;
+        }
     }
     fn run(&mut self) -> Res<either::Either<(), ()>> {
         self.playground().unwrap();
