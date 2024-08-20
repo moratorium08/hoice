@@ -693,7 +693,8 @@ impl CEX {
 
         let t = term::and(terms);
 
-        write!(solver, "(assert {})", t)?;
+        writeln!(solver, "(assert {})", t)?;
+        writeln!(solver)?;
 
         Ok(())
     }

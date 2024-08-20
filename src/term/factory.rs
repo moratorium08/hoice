@@ -823,6 +823,10 @@ where
     })
 }
 
+/// Not recomended to use this.
+///
+/// This function does not check anything and just create a function application.
+/// Therefore, there can be some ill-typed terms.
 #[inline]
 pub fn unsafe_fun<S>(name: S, args: Vec<Term>, ret_ty: Typ) -> Term
 where

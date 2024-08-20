@@ -63,8 +63,8 @@ impl Approx {
         let mut infos = VarInfos::new();
 
         let x_idx = infos.next_index();
-        let info = VarInfo::new("x".to_string(), typ::int(), x_idx);
-        infos.push(info);
+        // let info = VarInfo::new("x".to_string(), typ::int(), x_idx);
+        // infos.push(info);
 
         // 0
         Self {
@@ -177,6 +177,22 @@ impl Enc {
     fn get_ith_enc_rdf_name(&self, i: usize) -> String {
         format!("{}-{}", self.generate_fun_name(), i)
     }
+
+    /*
+    enc-list-int l = (ite (is-nil l) 0 (ite (is-cons l) (+ 1 (enc-list-int (tail l)))))
+     */
+    fn gen_body(&self, typ: &DTyp) -> Term {
+        for (tag, approx) in self.approxs.iter() {
+            let args = typ.news.get(&tag).unwrap();
+            let mut new_args = Vec::new();
+            for (_, in args.iter() {
+
+            }
+
+        }
+        unimplemented!()
+    }
+
     /// Define encoding functions in the solver.
     ///
     /// Assumption: Data type `self.typ` has already been defined before.
@@ -185,7 +201,7 @@ impl Enc {
         let typ = self.typ.to_string();
         for i in 0..self.n_params {
             let name = self.get_ith_enc_rdf_name(i);
-            let args = vec![("x", &typ)];
+            let args = vec![("v_0", &typ)];
             let ret = "Int";
             // todo
             let body = "1";
