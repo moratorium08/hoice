@@ -16,13 +16,28 @@ trait Template {
 }
 
 struct LinearApprox {
-    // n + 1 params * n_args * num of its approx
-    coef: VarMap<VarMap<VarMap<VarIdx>>>,
+    // n_args * num of its approx
+    coef: VarMap<VarMap<VarIdx>>,
+    cnst: VarIdx,
 }
 
 impl LinearApprox {
-    fn new(coef: VarMap<VarMap<VarMap<VarIdx>>>) -> Self {
-        Self { coef }
+    fn new(coef: VarMap<VarMap<VarIdx>>, fvs: &mut VarInfos) -> Self {
+        let idx = fvs.next_index();
+        let info = VarInfo::new("const_value".to_string(), typ::int(), idx);
+        fvs.push(info);
+        Self { coef, cnst: idx }
+    }
+    fn apply(&self, argss: impl IntoIterator<Item = Vec<Term>>) -> Term {
+        let mut res = vec![term::var(self.cnst, typ::int())];
+        for (args, coefs) in argss.into_iter().zip(self.coef.iter()) {
+            assert_eq!(args.len(), coefs.len());
+            for (arg, coef) in args.iter().zip(coefs.iter()) {
+                let t = term::mul(vec![term::var(*coef, typ::int()), arg.clone()]);
+                res.push(t);
+            }
+        }
+        term::add(res)
     }
 }
 
@@ -50,19 +65,18 @@ impl<'a> LinearTemplate<'a> {
     fn new(target_enc: &'a Enc, fvs: &mut VarInfos, encs: &'a BTreeMap<Typ, Enc>) -> Self {
         let typ = &target_enc.typ;
         let n_params = target_enc.n_params + 1;
-        let mut constructors = typ.dtyp_inspect().unwrap().0.news.keys();
-
         let mut approx_template = BTreeMap::new();
 
-        for constr in constructors {
+        // prepare LinearApprox for each constructor
+        for constr in typ.dtyp_inspect().unwrap().0.news.keys() {
             let (ty, prms) = typ.dtyp_inspect().unwrap();
-            let mut coefs = vec![VarMap::new(); target_enc.n_params + 1];
+            let mut coefs = VarMap::new();
+            // each constructor has a set of selectors
             for (sel, ty) in ty.selectors_of(constr).unwrap().iter() {
                 let ty = ty.to_type(Some(prms)).unwrap();
-                let name = format!("{constr}-{sel}");
                 let n = match encs.get(&ty) {
                     Some(enc_for_ty) => {
-                        // prepare template coefficients for all the arguments
+                        // prepare template coefficients for all the approximations of the argument
                         enc_for_ty.n_params + 1
                     }
                     None => {
@@ -70,13 +84,14 @@ impl<'a> LinearTemplate<'a> {
                         1
                     }
                 };
-                for i in 0..n_params {
-                    let args = LinearTemplate::prepare_coefs(name, fvs, n);
-                    coefs[i].push(args);
-                }
+                let name = format!("{constr}-{sel}");
+                // prepare coefs for constr.sel, which involes generating new template variables to be manged
+                // at the top level (`fvs`)
+                let args = LinearTemplate::prepare_coefs(name, fvs, n);
+                coefs.push(args);
             }
 
-            approx_template.insert(constr.to_string(), LinearApprox::new(coefs.into()));
+            approx_template.insert(constr.to_string(), LinearApprox::new(coefs.into(), fvs));
         }
 
         Self {
@@ -169,12 +184,31 @@ impl<'a> LearnCtx<'a> {
         Ok(())
     }
 
-    fn apply_template(&self, v: Val, templates: &BTreeMap<Typ, LinearTemplate>) -> Val {
-        match templates.get(&v.typ()) {
+    fn apply_template(&self, v: &Val, templates: &BTreeMap<Typ, LinearTemplate>) -> Vec<Term> {
+        let ty = v.typ();
+        match templates.get(&ty) {
             Some(tpl) => {
-                unimplemented!()
+                let (vty, tag, args) = v.dtyp_inspect().unwrap();
+                debug_assert_eq!(&ty, vty);
+
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    let v = self.apply_template(arg, templates);
+                    arg_values.push(v);
+                }
+
+                // 1. use the existing encoders
+                let approx = self.encs.get(&ty).unwrap().approxs.get(tag).unwrap();
+                // TODO: append another argument to the existing approxs
+                let mut terms = approx.apply(arg_values.clone().into_iter().flatten().collect());
+                // 2. use the template encoder
+                let tpl_approx = tpl.approx_template.get(tag).unwrap();
+                let term = tpl_approx.apply(arg_values.into_iter());
+                terms.push(term);
+
+                terms
             }
-            None => v,
+            None => vec![term::val(v.clone())],
         }
     }
 
@@ -189,6 +223,7 @@ impl<'a> LearnCtx<'a> {
         //    for li in l1, ..., lk:
         //       r <- r.subst(li, enc.encode(vi))
         //    form <- form /\ r
+        // 7. solve form and return the model for
         // return form
 
         let mut fvs = VarInfos::new();
@@ -197,17 +232,20 @@ impl<'a> LearnCtx<'a> {
             let enc = LinearTemplate::new(e, &mut fvs, &self.encs);
             templates.insert(k.clone(), enc);
         }
-        let mut form = Vec::new();
+        //let mut form = Vec::new();
         for m in self.models.iter() {
-            let mut substs = VarHMap::new();
+            //let mut substs = VarHMap::new();
             for var in self.cex.vars.iter() {
-                let v = m[var.idx];
-                let v = self.apply_template(v, &templates);
-                substs.insert(var.idx, term::val(v));
+                let v = &m[var.idx];
+                todo!("use enc::encode?");
+                //let vs = self.apply_template(v, &templates);
+                //substs.insert(var.idx, term::val(v));
             }
-            let r = self.cex.term.subst_total(&substs);
-            form.push(r);
+            //let r = self.cex.term.subst_total(&substs);
+            //form.push(r);
         }
+
+        //
         unimplemented!()
     }
 
@@ -228,16 +266,20 @@ impl<'a> LearnCtx<'a> {
                 }
             }
             // 2. If not, learn something new
-            let enc = LinearTemplate::new(&self.cex);
             match self.get_instantiation()? {
                 None => panic!("Linear Template is not enough"),
                 Some(model) => {
-                    enc.update(self.encs, &model);
+                    //enc.update(self.encs, &model);
                 }
             }
         }
         Ok(())
     }
+}
+
+#[test]
+fn test_apply_template() {
+    unimplemented!()
 }
 
 /// Entrypoint for the learning algorithm

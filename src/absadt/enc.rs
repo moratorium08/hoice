@@ -322,35 +322,6 @@ impl<'a> EncodeCtx<'a> {
             },
         }
     }
-    // fn handle_dtype_app(&self, dtyp: &DTyp, op: &Op, argss: Vec<Vec<Term>>) -> Vec<Term> {
-    //     match op {
-    //         Op::Eql => {
-    //
-    //         }
-    //         Op::Ite => todo!(),
-    //         Op::Add
-    //         | Op::Sub
-    //         | Op::Mul
-    //         | Op::CMul
-    //         | Op::IDiv
-    //         | Op::Div
-    //         | Op::Rem
-    //         | Op::Mod
-    //         | Op::Gt
-    //         | Op::Ge
-    //         | Op::Le
-    //         | Op::Lt
-    //         | Op::Impl
-    //         | Op::Not
-    //         | Op::And
-    //         | Op::Or
-    //         | Op::Distinct
-    //         | Op::ToInt
-    //         | Op::ToReal
-    //         | Op::Store
-    //         | Op::Select => panic!("invalid operator for ADT: {}", op),
-    //     }
-    // }
     fn handle_app<EncodeVar>(
         &self,
         typ: &Typ,
