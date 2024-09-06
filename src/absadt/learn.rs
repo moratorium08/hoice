@@ -4,15 +4,10 @@ use crate::common::{smt::FullParser as Parser, Cex as Model, *};
 use crate::info::VarInfo;
 
 pub struct LearnCtx<'a> {
-    encs: &'a mut BTreeMap<Typ, Enc>,
+    encs: &'a mut BTreeMap<Typ, Encoder>,
     cex: &'a CEX,
     solver: &'a mut Solver<Parser>,
     models: Vec<Model>,
-}
-
-trait Template {
-    fn encode_term(&self, term: &Term) -> Term;
-    fn update(&self, encs: &mut BTreeMap<Typ, Enc>, model: &Model) -> Res<()>;
 }
 
 struct LinearApprox {
@@ -69,8 +64,10 @@ fn test_linear_approx_apply() {
         );
     }
 }
+
+type TEnc = Enc<Box<dyn Approximation>>;
 struct LinearTemplate<'a> {
-    target_enc: &'a Enc, // Data type to be abstracted
+    target_enc: &'a TEnc, // Data type to be abstracted
     n_params: usize,
     approx_template: BTreeMap<String, LinearApprox>,
 }
@@ -90,7 +87,7 @@ impl<'a> LinearTemplate<'a> {
         }
         res
     }
-    fn new(target_enc: &'a Enc, fvs: &mut VarInfos, encs: &'a BTreeMap<Typ, Enc>) -> Self {
+    fn new(target_enc: &'a TEnc, fvs: &mut VarInfos, encs: &'a BTreeMap<Typ, TEnc>) -> Self {
         let typ = &target_enc.typ;
         let n_params = target_enc.n_params + 1;
         let mut approx_template = BTreeMap::new();
@@ -130,34 +127,14 @@ impl<'a> LinearTemplate<'a> {
     }
 }
 
-//fn get_n_args(enc: &Enc, key: &str) -> usize {
-//    let approx = enc.approxs.get(key).unwrap();
-//    let (dtyp, prms) = enc.typ.dtyp_inspect().unwrap();
-//
-//    dtyp.news.get(&key).unwrap();
-//}
-
-impl<'a> Template for LinearTemplate<'a> {
-    fn encode_term(&self, term: &Term) -> Term {
-        unimplemented!();
-    }
-
-    fn update(&self, encs: &mut BTreeMap<Typ, Enc>, model: &Cex) -> Res<()> {
-        todo!()
-    }
-}
-
-//fn get_templates(n_arg: usize) -> Vec<Box<dyn Template>> {
-//    vec![Box::new(LinearTemplate::new(n_arg))]
-//}
-
 impl<'a> LearnCtx<'a> {
     pub fn new(
-        encs: &'a mut BTreeMap<Typ, Enc>,
+        encs: &'a mut BTreeMap<Typ, Encoder>,
         cex: &'a CEX,
         solver: &'a mut Solver<Parser>,
     ) -> Self {
         let models = Vec::new();
+
         LearnCtx {
             encs,
             cex,
@@ -206,12 +183,6 @@ impl<'a> LearnCtx<'a> {
         Ok(Some(cex))
     }
 
-    fn instantiate_template(&mut self, templates: Vec<Box<dyn Template>>) -> Res<()> {
-        self.solver.reset()?;
-        //let cex_instantiated = self.cex.term.subst_total()
-        Ok(())
-    }
-
     fn apply_template(&self, v: &Val, templates: &BTreeMap<Typ, LinearTemplate>) -> Vec<Term> {
         let ty = v.typ();
         match templates.get(&ty) {
@@ -255,17 +226,19 @@ impl<'a> LearnCtx<'a> {
         // return form
 
         let mut fvs = VarInfos::new();
-        let mut templates = BTreeMap::new();
-        for (k, e) in self.encs.iter() {
-            let enc = LinearTemplate::new(e, &mut fvs, &self.encs);
-            templates.insert(k.clone(), enc);
-        }
+        // templates encoder
+        //let mut templates = BTreeMap::new();
+        //for (k, e) in self.encs.iter() {
+        //    let enc = LinearTemplate::new(e, &mut fvs, &self.encs);
+        //    templates.insert(k.clone(), enc);
+        //}
         //let mut form = Vec::new();
         for m in self.models.iter() {
             //let mut substs = VarHMap::new();
             for var in self.cex.vars.iter() {
                 let v = &m[var.idx];
                 todo!("use enc::encode?");
+                // TODO!! starts from here, next
                 //let vs = self.apply_template(v, &templates);
                 //substs.insert(var.idx, term::val(v));
             }
@@ -310,7 +283,7 @@ impl<'a> LearnCtx<'a> {
 /// If this function returns Ok(()), some encodings are appended to `encs`
 /// so that `cex` can be refuted.
 pub fn work<'a>(
-    encs: &'a mut BTreeMap<Typ, Enc>,
+    encs: &'a mut BTreeMap<Typ, Encoder>,
     cex: &'a CEX,
     solver: &mut Solver<Parser>,
 ) -> Res<()> {

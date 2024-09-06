@@ -72,7 +72,14 @@ impl Approx {
             terms: vec![term::int_zero()],
         }
     }
-    pub fn apply(&self, arg_terms: Vec<Term>) -> Vec<Term> {
+}
+
+pub trait Approximation {
+    fn apply(&self, arg_terms: Vec<Term>) -> Vec<Term>;
+}
+
+impl Approximation for Approx {
+    fn apply(&self, arg_terms: Vec<Term>) -> Vec<Term> {
         let mut res = Vec::with_capacity(self.terms.len());
         for term in self.terms.iter() {
             let subst_map: VarHMap<_> = self
@@ -91,14 +98,16 @@ impl Approx {
 ///
 /// Assumption: typ is a monomorphic type.
 #[derive(Debug, Clone)]
-pub struct Enc {
+pub struct Enc<Approx> {
     /// Number of parameters for approximation
     pub typ: Typ,
     pub n_params: usize,
     pub approxs: BTreeMap<String, Approx>,
 }
 
-impl Enc {
+pub type Encoder = Enc<Approx>;
+
+impl<A: Approximation> Enc<A> {
     fn generate_fun_name(&self) -> String {
         let s = self.typ.to_string();
         let mut new_type = String::with_capacity(s.capacity());
@@ -126,11 +135,11 @@ impl Enc {
         introduced
     }
 
-    pub fn len_ilist(ilist_typ: Typ) -> Self {
+    pub fn len_ilist(ilist_typ: Typ) -> Enc<Approx> {
         let mut approxs = BTreeMap::new();
         approxs.insert("cons".to_string(), Approx::len_cons());
         approxs.insert("nil".to_string(), Approx::len_nil());
-        Self {
+        Enc {
             typ: ilist_typ,
             n_params: 1,
             approxs,
@@ -186,7 +195,7 @@ impl Enc {
 
     fn gen_rdf_body(
         &self,
-        ctx: &EncodeCtx,
+        ctx: &EncodeCtx<A>,
         tag: &str,
         cont: Option<Vec<Term>>,
         target_data: Term,
@@ -237,7 +246,7 @@ impl Enc {
     /// Assumption: Data type `self.typ` has already been defined before.
     pub fn generate_enc_fun(
         &self,
-        ctx: &EncodeCtx,
+        ctx: &EncodeCtx<A>,
         funs: &mut Vec<(String, Typ, Term)>,
     ) -> Res<()> {
         let mut constructors = self.typ.dtyp_inspect().unwrap().0.news.keys();
@@ -275,30 +284,34 @@ impl Enc {
     }
 }
 
-pub struct EncodeCtx<'a> {
-    encs: &'a BTreeMap<Typ, Enc>,
+pub struct EncodeCtx<'a, Approx> {
+    encs: &'a BTreeMap<Typ, Enc<Approx>>,
 }
 
-impl<'a> EncodeCtx<'a> {
-    /// The first item of the returned tuple is the new vector of variables
-    /// The second is the map from the original variable to approximated variables
-    pub fn tr_varinfos(&self, varmap: &VarInfos) -> (VarInfos, VarHMap<VarMap<VarInfo>>) {
-        let mut new_varmap = VarInfos::new();
-        let mut orig2approx_var = VarHMap::new();
-        for v in varmap.iter() {
-            if let Some(enc) = self.encs.get(&v.typ) {
-                let introduced = enc.gen_typ(&mut new_varmap, &v.name);
-                orig2approx_var.insert(v.idx, introduced);
-            } else {
-                // base types (not approximated)
-                let mut v = v.clone();
-                v.idx = new_varmap.next_index();
-                new_varmap.push(v);
-            }
+/// The first item of the returned tuple is the new vector of variables
+/// The second is the map from the original variable to approximated variables
+pub fn tr_varinfos<Approx: Approximation>(
+    encs: &BTreeMap<Typ, Enc<Approx>>,
+    varmap: &VarInfos,
+) -> (VarInfos, VarHMap<VarMap<VarInfo>>) {
+    let mut new_varmap = VarInfos::new();
+    let mut orig2approx_var = VarHMap::new();
+    for v in varmap.iter() {
+        if let Some(enc) = encs.get(&v.typ) {
+            let introduced = enc.gen_typ(&mut new_varmap, &v.name);
+            orig2approx_var.insert(v.idx, introduced);
+        } else {
+            // base types (not approximated)
+            let mut v = v.clone();
+            v.idx = new_varmap.next_index();
+            new_varmap.push(v);
         }
-        (new_varmap, orig2approx_var)
     }
-    pub fn new(encs: &'a BTreeMap<Typ, Enc>) -> Self {
+    (new_varmap, orig2approx_var)
+}
+
+impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
+    pub fn new(encs: &'a BTreeMap<Typ, Enc<Approx>>) -> Self {
         Self { encs }
     }
     fn encode_val(&self, val: &Val) -> Vec<Term> {

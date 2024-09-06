@@ -14,7 +14,7 @@ use crate::common::*;
 use crate::info::VarInfo;
 use crate::term::Term;
 
-use super::enc::{self, Approx, Enc};
+use super::enc::{self, Approx, Enc, Encoder};
 use super::hyper_res;
 use crate::common::{smt::FullParser as Parser, *};
 use hyper_res::ResolutionProof;
@@ -674,7 +674,11 @@ impl fmt::Display for CEX {
 }
 
 impl CEX {
-    pub fn define_assert(&self, solver: &mut Solver<Parser>, encs: &BTreeMap<Typ, Enc>) -> Res<()> {
+    pub fn define_assert(
+        &self,
+        solver: &mut Solver<Parser>,
+        encs: &BTreeMap<Typ, Encoder>,
+    ) -> Res<()> {
         for var in self.vars.iter() {
             let mut varset = VarSet::new();
             varset.insert(var.idx);

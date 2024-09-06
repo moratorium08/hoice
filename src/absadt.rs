@@ -38,7 +38,7 @@
 //! - set of ADT does not change from start to end during `work`
 //!   - they are defined as the global hashconsed objects
 use chc::{AbsInstance, CEX};
-use enc::Enc;
+use enc::Encoder;
 use hyper_res::ResolutionProof;
 
 use crate::common::{smt::FullParser as Parser, *};
@@ -79,7 +79,7 @@ pub struct AbsConf<'original> {
     pub cexs: Vec<chc::CEX>,
     pub instance: AbsInstance<'original>,
     pub solver: Solver<Parser>,
-    pub encs: BTreeMap<Typ, Enc>,
+    pub encs: BTreeMap<Typ, Encoder>,
 }
 
 impl<'original> AbsConf<'original> {
@@ -115,7 +115,7 @@ impl<'original> AbsConf<'original> {
             .find_map(|x| if x.typ.is_dtyp() { Some(&x.typ) } else { None })
             .unwrap()
             .clone();
-        self.encs.insert(ty.clone(), Enc::len_ilist(ty));
+        self.encs.insert(ty.clone(), Encoder::len_ilist(ty));
 
         self.instance.dump_as_smt2(&mut file, "before", false)?;
         let encoded = self.encode();
@@ -163,7 +163,7 @@ impl<'original> AbsConf<'original> {
 impl<'a> AbsConf<'a> {
     pub fn encode_clause(&self, c: &chc::AbsClause) -> chc::AbsClause {
         let ctx = enc::EncodeCtx::new(&self.encs);
-        let (new_vars, introduced) = ctx.tr_varinfos(&c.vars);
+        let (new_vars, introduced) = enc::tr_varinfos(&self.encs, &c.vars);
         let encode_var = |typ: &Typ, var| {
             if let Some(x) = introduced.get(var) {
                 let mut res = Vec::new();
