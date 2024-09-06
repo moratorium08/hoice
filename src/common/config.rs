@@ -1222,6 +1222,10 @@ impl Config {
         app = TeacherConf::add_args(app, &mut 500);
         app = Self::add_check_args(app, 600);
 
+        let i: std::iter::Empty<std::ffi::OsString> = std::iter::empty();
+        #[cfg(test)]
+        let matches = app.get_matches_from(i);
+        #[cfg(not(test))]
         let matches = app.get_matches();
 
         // Input file.

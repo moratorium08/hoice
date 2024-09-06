@@ -41,6 +41,34 @@ impl LinearApprox {
     }
 }
 
+#[test]
+fn test_linear_approx_apply() {
+    let mut fvs = VarInfos::new();
+    // dtyp = Cons(x)
+    let coef = LinearTemplate::prepare_coefs("dtyp-cons", &mut fvs, 1);
+    let approx = LinearApprox::new(vec![coef].into(), &mut fvs);
+
+    let x = term::val(val::int(4));
+    let argss = vec![vec![x.clone()]];
+    let t = approx.apply(argss.into_iter());
+
+    let t2 = term::add(vec![
+        term::var(1, typ::int()),
+        term::mul(vec![term::var(0, typ::int()), x.clone()]),
+    ]);
+    println!("t: {}", t);
+    println!("t2: {}", t2);
+    for (a, b) in [(4i64, 3i64), (1, 2), (-4, 0)].into_iter() {
+        let subst: VarHMap<_> = (0..2)
+            .map(|x| VarIdx::from(x))
+            .zip(vec![term::val(val::int(a)), term::val(val::int(b))].into_iter())
+            .collect();
+        assert_eq!(
+            t.subst_total(&subst).unwrap().0.as_val(),
+            t2.subst_total(&subst).unwrap().0.as_val()
+        );
+    }
+}
 struct LinearTemplate<'a> {
     target_enc: &'a Enc, // Data type to be abstracted
     n_params: usize,
@@ -275,11 +303,6 @@ impl<'a> LearnCtx<'a> {
         }
         Ok(())
     }
-}
-
-#[test]
-fn test_apply_template() {
-    unimplemented!()
 }
 
 /// Entrypoint for the learning algorithm

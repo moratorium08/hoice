@@ -96,6 +96,7 @@ impl<'original> AbsConf<'original> {
             encs,
         })
     }
+
     /// To be removed.
     fn playground(&mut self) -> Res<()> {
         println!("playground");
