@@ -33,6 +33,12 @@ impl Approx {
     pub fn new(args: VarInfos, terms: Vec<Term>) -> Self {
         Self { args, terms }
     }
+    pub fn empty() -> Self {
+        Self {
+            args: VarInfos::new(),
+            terms: Vec::new(),
+        }
+    }
     /// Length for cons (of type Int List).
     ///
     /// Used for tests

@@ -11,17 +11,24 @@ pub struct LearnCtx<'a> {
 }
 
 struct LinearApprox {
+    /// Existing approx
+    approx: Approx,
+    // approx template
     // n_args * num of its approx
     coef: VarMap<VarMap<VarIdx>>,
     cnst: VarIdx,
 }
 
 impl LinearApprox {
-    fn new(coef: VarMap<VarMap<VarIdx>>, fvs: &mut VarInfos) -> Self {
+    fn new(coef: VarMap<VarMap<VarIdx>>, fvs: &mut VarInfos, approx: Approx) -> Self {
         let idx = fvs.next_index();
         let info = VarInfo::new("const_value".to_string(), typ::int(), idx);
         fvs.push(info);
-        Self { coef, cnst: idx }
+        Self {
+            coef,
+            cnst: idx,
+            approx,
+        }
     }
     fn apply(&self, argss: impl IntoIterator<Item = Vec<Term>>) -> Term {
         let mut res = vec![term::var(self.cnst, typ::int())];
@@ -40,8 +47,8 @@ impl LinearApprox {
 fn test_linear_approx_apply() {
     let mut fvs = VarInfos::new();
     // dtyp = Cons(x)
-    let coef = LinearTemplate::prepare_coefs("dtyp-cons", &mut fvs, 1);
-    let approx = LinearApprox::new(vec![coef].into(), &mut fvs);
+    let coef = prepare_coefs("dtyp-cons", &mut fvs, 1);
+    let approx = LinearApprox::new(vec![coef].into(), &mut fvs, Approx::empty());
 
     let x = term::val(val::int(4));
     let argss = vec![vec![x.clone()]];
@@ -66,31 +73,27 @@ fn test_linear_approx_apply() {
 }
 
 type TEnc = Enc<Box<dyn Approximation>>;
-struct LinearTemplate<'a> {
-    target_enc: &'a TEnc, // Data type to be abstracted
-    n_params: usize,
-    approx_template: BTreeMap<String, LinearApprox>,
-}
+pub type LinearTemplate = Enc<LinearApprox>;
 
-impl<'a> LinearTemplate<'a> {
-    fn prepare_coefs<S>(varname: S, fvs: &mut VarInfos, n: usize) -> VarMap<VarIdx>
-    where
-        S: AsRef<str>,
-    {
-        let varname = varname.as_ref();
-        let mut res = VarMap::new();
-        for i in 0..n {
-            let idx = fvs.next_index();
-            let info = VarInfo::new(format!("{varname}-{i}"), typ::int(), idx);
-            res.push(idx);
-            fvs.push(info);
-        }
-        res
+fn prepare_coefs<S>(varname: S, fvs: &mut VarInfos, n: usize) -> VarMap<VarIdx>
+where
+    S: AsRef<str>,
+{
+    let varname = varname.as_ref();
+    let mut res = VarMap::new();
+    for i in 0..n {
+        let idx = fvs.next_index();
+        let info = VarInfo::new(format!("{varname}-{i}"), typ::int(), idx);
+        res.push(idx);
+        fvs.push(info);
     }
-    fn new(target_enc: &'a TEnc, fvs: &mut VarInfos, encs: &'a BTreeMap<Typ, TEnc>) -> Self {
-        let typ = &target_enc.typ;
-        let n_params = target_enc.n_params + 1;
-        let mut approx_template = BTreeMap::new();
+    res
+}
+impl LinearTemplate {
+    fn new(typ: Typ, fvs: &mut VarInfos, encs: &BTreeMap<Typ, Encoder>) -> Self {
+        let cur_enc = encs.get(&typ).unwrap();
+        let n_params = cur_enc.n_params + 1;
+        let mut approxs = BTreeMap::new();
 
         // prepare LinearApprox for each constructor
         for constr in typ.dtyp_inspect().unwrap().0.news.keys() {
@@ -110,19 +113,33 @@ impl<'a> LinearTemplate<'a> {
                     }
                 };
                 let name = format!("{constr}-{sel}");
-                // prepare coefs for constr.sel, which involes generating new template variables to be manged
+                // prepare coefs for constr-sel, which involes generating new template variables manged
                 // at the top level (`fvs`)
-                let args = LinearTemplate::prepare_coefs(name, fvs, n);
+                let args = prepare_coefs(name, fvs, n);
                 coefs.push(args);
             }
 
-            approx_template.insert(constr.to_string(), LinearApprox::new(coefs.into(), fvs));
+            let mut approx = cur_enc.approxs.get(constr).unwrap().clone();
+            let n_args: usize = coefs
+                .iter()
+                .map(|x| x.iter().map(|x| 1).sum::<usize>())
+                .sum();
+            // insert dummy variables for newly-introduced approximated integers
+            for _ in 0..(n_args - approx.args.len()) {
+                approx
+                    .args
+                    .push(VarInfo::new("tmp", typ::int(), approx.args.next_index()));
+            }
+            approxs.insert(
+                constr.to_string(),
+                LinearApprox::new(coefs.into(), fvs, approx),
+            );
         }
 
         Self {
-            target_enc,
+            typ,
             n_params,
-            approx_template,
+            approxs,
         }
     }
 }
@@ -228,8 +245,9 @@ impl<'a> LearnCtx<'a> {
         let mut fvs = VarInfos::new();
         // templates encoder
         //let mut templates = BTreeMap::new();
+        //// append existing ones to the templates
         //for (k, e) in self.encs.iter() {
-        //    let enc = LinearTemplate::new(e, &mut fvs, &self.encs);
+        //    let enc = LinearTemplate::new(e.typ.clone(), &mut fvs, &self.encs);
         //    templates.insert(k.clone(), enc);
         //}
         //let mut form = Vec::new();
@@ -245,8 +263,6 @@ impl<'a> LearnCtx<'a> {
             //let r = self.cex.term.subst_total(&substs);
             //form.push(r);
         }
-
-        //
         unimplemented!()
     }
 
