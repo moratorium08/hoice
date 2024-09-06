@@ -140,60 +140,8 @@ impl<'original> AbsConf<'original> {
         Ok(())
     }
 
-    /// Define encoding functions
-    ///
-    /// Assumption: Data types are all defined.
-    fn define_enc_funs(&mut self) -> Res<()> {
-        let ctx = enc::EncodeCtx::new(&self.encs);
-        let mut funs = Vec::new();
-        for enc in self.encs.values() {
-            enc.generate_enc_fun(&ctx, &mut funs)?;
-        }
-
-        let funs_strs = funs.into_iter().map(|(funname, ty, term)| {
-            let args = vec![("v_0", ty.to_string())];
-            let body = term.to_string();
-            (funname, args, "Int", body)
-        });
-        self.solver.define_funs_rec(funs_strs)?;
-        Ok(())
-    }
-
-    /// Define data types
-    fn define_datatypes(&mut self) -> Res<()> {
-        dtyp::write_all(&mut self.solver, "")?;
-        Ok(())
-    }
-
-    fn get_model(&mut self, cex: &CEX) -> Res<Option<Cex>> {
-        self.solver.reset()?;
-        self.define_datatypes()?;
-        self.define_enc_funs()?;
-        cex.define_assert(&mut self.solver, &self.encs)?;
-        let b = self.solver.check_sat()?;
-        if !b {
-            return Ok(None);
-        }
-        let model = self.solver.get_model()?;
-        let model = Parser.fix_model(model)?;
-        let cex = Cex::of_model(&cex.vars, model, true)?;
-        Ok(Some(cex))
-    }
-
-    fn gen_enc(&mut self, cex: CEX) -> Res<()> {
-        let mut models = Vec::new();
-
-        loop {
-            let model = self.get_model(&cex)?.unwrap();
-            println!("model: {}", model);
-            models.push(model);
-            //  self.cexs.push(cex);
-            let learn_ctx = learn::LearnCtx::new(&mut self.encs, &cex, &models);
-            learn_ctx.work()?;
-        }
-    }
     fn run(&mut self) -> Res<either::Either<(), ()>> {
-        self.playground().unwrap();
+        self.playground()?;
         let r = loop {
             let encoded = self.encode();
             match encoded.check_sat()? {
@@ -201,10 +149,9 @@ impl<'original> AbsConf<'original> {
                     break either::Left(());
                 }
                 either::Right(x) => {
-                    println!("unsat: {x}");
                     let cex = self.instance.get_cex(&x);
                     println!("cex: {cex}");
-                    self.gen_enc(cex)?;
+                    learn::work(&mut self.encs, &cex, &mut self.solver)?;
                 }
             }
         };
@@ -214,7 +161,6 @@ impl<'original> AbsConf<'original> {
 
 impl<'a> AbsConf<'a> {
     pub fn encode_clause(&self, c: &chc::AbsClause) -> chc::AbsClause {
-        println!("hi: {}", c.lhs_term);
         let ctx = enc::EncodeCtx::new(&self.encs);
         let (new_vars, introduced) = ctx.tr_varinfos(&c.vars);
         let encode_var = |typ: &Typ, var| {
