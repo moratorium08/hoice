@@ -14,7 +14,7 @@ use crate::common::*;
 use crate::info::VarInfo;
 use crate::term::Term;
 
-use super::enc::{self, Approx, Enc, Encoder};
+use super::enc::{self, Approx, Approximation, Enc, Encoder};
 use super::hyper_res;
 use crate::common::{smt::FullParser as Parser, *};
 use hyper_res::ResolutionProof;
@@ -265,7 +265,7 @@ fn gen_lhs_preds(clause: &Clause) -> Vec<PredApp> {
 
 fn handle_query(clause: &Clause) -> AbsClause {
     let vars = clause.vars().clone();
-    let mut lhs_preds = gen_lhs_preds(clause);
+    let lhs_preds = gen_lhs_preds(clause);
     let lhs_term = term::and(clause.lhs_terms().iter().cloned().collect());
     let head = None;
     AbsClause {
@@ -674,10 +674,10 @@ impl fmt::Display for CEX {
 }
 
 impl CEX {
-    pub fn define_assert(
+    pub fn define_assert<Approx: Approximation>(
         &self,
         solver: &mut Solver<Parser>,
-        encs: &BTreeMap<Typ, Encoder>,
+        encs: &BTreeMap<Typ, Enc<Approx>>,
     ) -> Res<()> {
         for var in self.vars.iter() {
             let mut varset = VarSet::new();
