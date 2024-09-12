@@ -5,6 +5,7 @@ use crate::info::VarInfo;
 
 pub struct LearnCtx<'a> {
     encs: BTreeMap<Typ, Enc<LinearApprox>>,
+    original_encs: &'a BTreeMap<Typ, Encoder>,
     cex: &'a CEX,
     solver: &'a mut Solver<Parser>,
     models: Vec<Model>,
@@ -156,6 +157,7 @@ impl<'a> LearnCtx<'a> {
 
         LearnCtx {
             encs: new_encs,
+            original_encs: encs,
             cex,
             solver,
             models,
@@ -166,9 +168,9 @@ impl<'a> LearnCtx<'a> {
     ///
     /// Assumption: Data types are all defined.
     fn define_enc_funs(&mut self) -> Res<()> {
-        let ctx = super::enc::EncodeCtx::new(&self.encs);
+        let ctx = super::enc::EncodeCtx::new(&self.original_encs);
         let mut funs = Vec::new();
-        for enc in self.encs.values() {
+        for enc in self.original_encs.values() {
             enc.generate_enc_fun(&ctx, &mut funs)?;
         }
 
@@ -191,7 +193,8 @@ impl<'a> LearnCtx<'a> {
         self.solver.reset()?;
         self.define_datatypes()?;
         self.define_enc_funs()?;
-        self.cex.define_assert(&mut self.solver, &self.encs)?;
+        self.cex
+            .define_assert(&mut self.solver, &self.original_encs)?;
         let b = self.solver.check_sat()?;
         if !b {
             return Ok(None);
@@ -219,16 +222,28 @@ impl<'a> LearnCtx<'a> {
         let mut form = Vec::new();
         let encoder = EncodeCtx::new(&self.encs);
         for m in self.models.iter() {
-            println!("models: m");
+            println!("models:");
+            for (i, v) in m.iter().enumerate() {
+                println!("- v_{i}: {}", v);
+            }
             //let mut substs = VarHMap::new();
             let mut terms = encoder.encode(&self.cex.term, &|_: &Typ, v: &VarIdx| {
                 let v = &m[*v];
-                encoder.encode_val(v)
+                println!("v: {}", v);
+                let terms = encoder.encode_val(v);
+                for t in terms.iter() {
+                    println!("- {t}");
+                }
+                terms
             });
             println!("encoded");
             form.append(&mut terms)
         }
         // solve the form
+        println!("forms");
+        for f in form.iter() {
+            println!("- {}", f);
+        }
         let form = term::and(form);
         println!("form: {}", form);
         unimplemented!()
@@ -237,7 +252,6 @@ impl<'a> LearnCtx<'a> {
     pub fn work(&mut self) -> Res<()> {
         // We now only consider the linear models
         // Appendinx them to the existing encodings
-        let mut models = Vec::new();
         loop {
             // 1. Check if the new encoding can refute the counterexample
             match self.get_model()? {
@@ -247,7 +261,7 @@ impl<'a> LearnCtx<'a> {
                 }
                 Some(model) => {
                     println!("model: {}", model);
-                    models.push(model);
+                    self.models.push(model);
                 }
             }
             // 2. If not, learn something new
