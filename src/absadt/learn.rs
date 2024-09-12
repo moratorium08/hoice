@@ -4,8 +4,10 @@ use crate::common::{smt::FullParser as Parser, Cex as Model, *};
 use crate::info::VarInfo;
 
 pub struct LearnCtx<'a> {
+    /// parameters for templates
+    parameters: VarInfos,
     encs: BTreeMap<Typ, Enc<LinearApprox>>,
-    original_encs: &'a BTreeMap<Typ, Encoder>,
+    original_encs: &'a mut BTreeMap<Typ, Encoder>,
     cex: &'a CEX,
     solver: &'a mut Solver<Parser>,
     models: Vec<Model>,
@@ -43,6 +45,37 @@ impl LinearApprox {
             coef,
             cnst: idx,
             approx,
+        }
+    }
+    fn instantiate(&self, model: &Model) -> Approx {
+        let mut approx = self.approx.clone();
+
+        let cnst = &model[self.cnst];
+        let mut terms = vec![term::val(cnst.clone())];
+        for (coef, arg) in self.coef.iter().flatten().zip(approx.args.iter()) {
+            let val = &model[*coef];
+            let val = term::val(val.clone());
+            let var = term::var(arg.idx, arg.typ.clone());
+            terms.push(term::mul(vec![val, var]));
+        }
+        let term = term::add(terms);
+        approx.terms.push(term);
+
+        approx
+    }
+}
+
+impl Enc<LinearApprox> {
+    fn instantiate(&self, model: &Model) -> Encoder {
+        let mut approxs = BTreeMap::new();
+        for (constr, approx) in self.approxs.iter() {
+            let approx = approx.instantiate(model);
+            approxs.insert(constr.clone(), approx);
+        }
+        Encoder {
+            approxs,
+            typ: self.typ.clone(),
+            n_params: self.n_params,
         }
     }
 }
@@ -161,6 +194,7 @@ impl<'a> LearnCtx<'a> {
             cex,
             solver,
             models,
+            parameters: fvs,
         }
     }
 
@@ -204,7 +238,31 @@ impl<'a> LearnCtx<'a> {
         let cex = Model::of_model(&self.cex.vars, model, true)?;
         Ok(Some(cex))
     }
-    fn get_instantiation(&self) -> Res<Option<Model>> {
+
+    /// Define paramter constants
+    fn define_parameters(&mut self) -> Res<()> {
+        for var in self.parameters.iter() {
+            self.solver
+                .declare_const(&format!("v_{}", var.idx), &var.typ.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn get_template_model(&mut self, form: &term::Term) -> Res<Option<Model>> {
+        self.solver.reset()?;
+        self.define_parameters()?;
+        writeln!(self.solver, "(assert {})", form)?;
+        writeln!(self.solver)?;
+        let b = self.solver.check_sat()?;
+        if !b {
+            return Ok(None);
+        }
+        let model = self.solver.get_model()?;
+        let model = Parser.fix_model(model)?;
+        let cex = Model::of_model(&self.parameters, model, true)?;
+        Ok(Some(cex))
+    }
+    fn get_instantiation(&mut self) -> Res<Option<Model>> {
         // 1. Let l1, ..., lk be li in fv(cex)
         // 2. vis = [[m[li] for m in self.models] for li in l1, ..., lk]
         // 4. Declare a1, ... ak in coef(enc) as free variables
@@ -222,31 +280,38 @@ impl<'a> LearnCtx<'a> {
         let mut form = Vec::new();
         let encoder = EncodeCtx::new(&self.encs);
         for m in self.models.iter() {
-            println!("models:");
-            for (i, v) in m.iter().enumerate() {
-                println!("- v_{i}: {}", v);
-            }
+            // println!("models:");
+            // for (i, v) in m.iter().enumerate() {
+            //     println!("- v_{i}: {}", v);
+            // }
             //let mut substs = VarHMap::new();
             let mut terms = encoder.encode(&self.cex.term, &|_: &Typ, v: &VarIdx| {
                 let v = &m[*v];
-                println!("v: {}", v);
                 let terms = encoder.encode_val(v);
-                for t in terms.iter() {
-                    println!("- {t}");
-                }
+                //for t in terms.iter() {
+                //    println!("- {t}");
+                //}
                 terms
             });
-            println!("encoded");
             form.append(&mut terms)
         }
         // solve the form
-        println!("forms");
-        for f in form.iter() {
-            println!("- {}", f);
-        }
+        // println!("forms");
+        // for f in form.iter() {
+        //     println!("- {}", f);
+        // }
         let form = term::and(form);
         println!("form: {}", form);
-        unimplemented!()
+
+        let m = self.get_template_model(&form)?;
+
+        match &m {
+            Some(m) => {
+                println!("parameters: {}", m);
+            }
+            None => unimplemented!("linear template is not enough"),
+        }
+        Ok(m)
     }
 
     pub fn work(&mut self) -> Res<()> {
@@ -268,7 +333,11 @@ impl<'a> LearnCtx<'a> {
             match self.get_instantiation()? {
                 None => panic!("Linear Template is not enough"),
                 Some(model) => {
-                    //enc.update(self.encs, &model);
+                    *self.original_encs = self
+                        .encs
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.instantiate(&model)))
+                        .collect()
                 }
             }
         }

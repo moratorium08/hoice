@@ -30,9 +30,6 @@ impl fmt::Display for Approx {
 }
 
 impl Approx {
-    pub fn new(args: VarInfos, terms: Vec<Term>) -> Self {
-        Self { args, terms }
-    }
     pub fn empty() -> Self {
         Self {
             args: VarInfos::new(),
@@ -358,14 +355,14 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
         if argss.len() == 0 {
             return vec![term::app(op.clone(), Vec::new())];
         }
-        println!("op: {op}");
-        println!("argss");
-        for args in argss.iter() {
-            println!("args:");
-            for arg in args.iter() {
-                println!("- {}", arg);
-            }
-        }
+        // println!("op: {op}");
+        // println!("argss");
+        // for args in argss.iter() {
+        //     println!("args:");
+        //     for arg in args.iter() {
+        //         println!("- {}", arg);
+        //     }
+        // }
         let l = argss[0].len();
         let mut res = Vec::with_capacity(l);
         for i in 0..l {
@@ -376,16 +373,16 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
             }
             res.push(term::app(op.clone(), new_args));
         }
-        println!("res: ");
-        for r in res.iter() {
-            println!("- {r}");
-        }
+        // println!("res: ");
+        // for r in res.iter() {
+        //     println!("- {r}");
+        // }
         // if the return type is dtype, then
         // the returned vector can be longer than 1
         if typ.is_bool() && res.len() > 1 {
             res = vec![term::and(res)];
         }
-        assert!(res.len() == 1 || typ.is_dtyp());
+        debug_assert!(res.len() == 1 || typ.is_dtyp());
         res
     }
     fn handle_dtypnew(&self, typ: &Typ, name: &str, argss: Vec<Vec<Term>>) -> Vec<Term> {
