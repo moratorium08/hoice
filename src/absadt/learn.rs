@@ -20,8 +20,8 @@ struct LinearApprox {
 }
 
 impl Approximation for LinearApprox {
-    fn apply(&self, arg_terms: Vec<Term>) -> Vec<Term> {
-        let mut terms = self.approx.apply(arg_terms.clone());
+    fn apply(&self, arg_terms: &[Term]) -> Vec<Term> {
+        let mut terms = self.approx.apply(arg_terms);
         let mut res = vec![term::var(self.cnst, typ::int())];
         let coefs = self.coef.iter().flatten();
         for (arg, coef) in arg_terms.into_iter().zip(coefs) {
@@ -55,7 +55,7 @@ fn test_linear_approx_apply() {
 
     let x = term::val(val::int(4));
     let argss = vec![x.clone()];
-    let mut t = approx.apply(argss);
+    let mut t = approx.apply(&argss);
 
     assert_eq!(t.len(), 1);
     let t = t.remove(0);
@@ -201,35 +201,6 @@ impl<'a> LearnCtx<'a> {
         let cex = Model::of_model(&self.cex.vars, model, true)?;
         Ok(Some(cex))
     }
-
-    // fn apply_template(&self, v: &Val, templates: &BTreeMap<Typ, LinearTemplate>) -> Vec<Term> {
-    //     let ty = v.typ();
-    //     match templates.get(&ty) {
-    //         Some(tpl) => {
-    //             let (vty, tag, args) = v.dtyp_inspect().unwrap();
-    //             debug_assert_eq!(&ty, vty);
-
-    //             let mut arg_values = Vec::new();
-    //             for arg in args {
-    //                 let v = self.apply_template(arg, templates);
-    //                 arg_values.push(v);
-    //             }
-
-    //             // 1. use the existing encoders
-    //             let approx = self.encs.get(&ty).unwrap().approxs.get(tag).unwrap();
-    //             // TODO: append another argument to the existing approxs
-    //             let mut terms = approx.apply(arg_values.clone().into_iter().flatten().collect());
-    //             // 2. use the template encoder
-    //             let tpl_approx = tpl.approx_template.get(tag).unwrap();
-    //             let term = tpl_approx.apply(arg_values.into_iter());
-    //             terms.push(term);
-
-    //             terms
-    //         }
-    //         None => vec![term::val(v.clone())],
-    //     }
-    // }
-
     fn get_instantiation(&self) -> Res<Option<Model>> {
         // 1. Let l1, ..., lk be li in fv(cex)
         // 2. vis = [[m[li] for m in self.models] for li in l1, ..., lk]
@@ -245,25 +216,21 @@ impl<'a> LearnCtx<'a> {
         // return form
 
         // templates encoder
-        // let mut templates = BTreeMap::new();
-        // //// append existing ones to the templates
-        // for (k, e) in self.encs.iter() {
-        //     let enc = LinearTemplate::new(e.typ.clone(), &mut fvs, &self.encs);
-        //     templates.insert(k.clone(), enc);
-        // }
-        //let mut form = Vec::new();
-        // for m in self.models.iter() {
-        //     //let mut substs = VarHMap::new();
-        //     for var in self.cex.vars.iter() {
-        //         let v = &m[var.idx];
-        //         todo!("use enc::encode?");
-        //         // TODO!! starts from here, next
-        //         //let vs = self.apply_template(v, &templates);
-        //         //substs.insert(var.idx, term::val(v));
-        //     }
-        //     //let r = self.cex.term.subst_total(&substs);
-        //     //form.push(r);
-        // }
+        let mut form = Vec::new();
+        let encoder = EncodeCtx::new(&self.encs);
+        for m in self.models.iter() {
+            println!("models: m");
+            //let mut substs = VarHMap::new();
+            let mut terms = encoder.encode(&self.cex.term, &|_: &Typ, v: &VarIdx| {
+                let v = &m[*v];
+                encoder.encode_val(v)
+            });
+            println!("encoded");
+            form.append(&mut terms)
+        }
+        // solve the form
+        let form = term::and(form);
+        println!("form: {}", form);
         unimplemented!()
     }
 

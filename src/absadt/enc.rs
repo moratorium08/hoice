@@ -81,11 +81,11 @@ impl Approx {
 }
 
 pub trait Approximation {
-    fn apply(&self, arg_terms: Vec<Term>) -> Vec<Term>;
+    fn apply(&self, arg_terms: &[Term]) -> Vec<Term>;
 }
 
 impl Approximation for Approx {
-    fn apply(&self, arg_terms: Vec<Term>) -> Vec<Term> {
+    fn apply(&self, arg_terms: &[Term]) -> Vec<Term> {
         let mut res = Vec::with_capacity(self.terms.len());
         for term in self.terms.iter() {
             let subst_map: VarHMap<_> = self
@@ -231,7 +231,7 @@ impl<A: Approximation> Enc<A> {
         }
         // apply approx to [(enc-list-int-0 (tail l)); enc-list-int-1 (tail l))];
 
-        let res = self.approxs.get(tag).unwrap().apply(args);
+        let res = self.approxs.get(tag).unwrap().apply(&args);
         let cont = match cont {
             Some(cont) => cont,
             None => return res,
@@ -320,7 +320,7 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
     pub fn new(encs: &'a BTreeMap<Typ, Enc<Approx>>) -> Self {
         Self { encs }
     }
-    fn encode_val(&self, val: &Val) -> Vec<Term> {
+    pub fn encode_val(&self, val: &Val) -> Vec<Term> {
         match val.get() {
             val::RVal::N(_) => todo!(),
             val::RVal::B(_) | val::RVal::I(_) | val::RVal::R(_) | val::RVal::Array { .. } => {
@@ -335,7 +335,7 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
                             new_args.push(encoded);
                         }
                     }
-                    approx.apply(new_args)
+                    approx.apply(&new_args)
                 }
                 None => unimplemented!("no encoding for {}", name),
             },
@@ -358,26 +358,25 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
         if argss.len() == 0 {
             return vec![term::app(op.clone(), Vec::new())];
         }
-        match typ.get() {
-            typ::RTyp::Unk
-            | typ::RTyp::Int
-            | typ::RTyp::Real
-            | typ::RTyp::Bool
-            | typ::RTyp::Array { .. }
-            | typ::RTyp::DTyp { .. } => {
-                let l = argss[0].len();
-                let mut res = Vec::with_capacity(l);
-                for i in 0..l {
-                    let mut new_args = Vec::with_capacity(argss.len());
-                    for args in argss.iter() {
-                        debug_assert!(args.len() == l);
-                        new_args.push(args[i].clone());
-                    }
-                    res.push(term::app(op.clone(), new_args));
-                }
-                res
-            } //typ::RTyp::DTyp { dtyp, prms } => self.handle_dtype_app(dtyp, op, argss),
+        //println!("op: {op}");
+        //println!("argss");
+        //for args in argss.iter() {
+        //    println!("args:");
+        //    for arg in args.iter() {
+        //        println!("- {}", arg);
+        //    }
+        //}
+        let l = argss[0].len();
+        let mut res = Vec::with_capacity(l);
+        for i in 0..l {
+            let mut new_args = Vec::with_capacity(argss.len());
+            for args in argss.iter() {
+                //debug_assert!(args.len() == l);
+                new_args.push(args[i].clone());
+            }
+            res.push(term::app(op.clone(), new_args));
         }
+        res
     }
     fn handle_dtypnew(&self, typ: &Typ, name: &str, argss: Vec<Vec<Term>>) -> Vec<Term> {
         let enc = if let Some(enc) = self.encs.get(typ) {
@@ -390,8 +389,8 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
             return res;
         };
         let approx = enc.approxs.get(name).unwrap();
-        let args = argss.into_iter().flatten().collect();
-        approx.apply(args)
+        let args: Vec<_> = argss.iter().flatten().cloned().collect();
+        approx.apply(&args)
     }
     fn handle_dtypslc(&self, typ: &Typ, name: &str, argss: &Vec<Vec<Term>>) -> Vec<Term> {
         unimplemented!()
