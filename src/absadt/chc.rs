@@ -874,9 +874,6 @@ pub fn test_check_sat() {
         .unwrap()
         .unwrap();
     let preds = instance[c].lhs_preds();
-    // 各predごとにpredicate app
-    // 各appごとにargss/args
-    //  - argss:
     for (p, argss) in preds.iter() {
         println!("argss: {:?}", argss);
         for args in argss.iter() {

@@ -137,7 +137,7 @@ where
     println!("{}", is_sat);
 
     if is_sat {
-        let model = spacer.get_model()?;
+        //let model = spacer.get_model()?;
         Ok(either::Left(()))
     } else {
         let proof = spacer.get_proof()?;

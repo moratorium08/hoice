@@ -263,6 +263,9 @@ pub fn work(
     //playground(instance);
 
     let mut absconf = AbsConf::new(instance)?;
-    absconf.run()?;
-    unimplemented!()
+    let r = match absconf.run()? {
+        either::Left(()) => either::Left(ConjCandidates::new()),
+        either::Right(_) => either::Right(UnsatRes::None),
+    };
+    Ok(Some(r))
 }

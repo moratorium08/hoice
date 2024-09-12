@@ -301,6 +301,8 @@ impl<'a> LearnCtx<'a> {
         //     println!("- {}", f);
         // }
         let form = term::and(form);
+        // We want to make form unsatisfiable
+        let form = term::not(form);
         println!("form: {}", form);
 
         let m = self.get_template_model(&form)?;
