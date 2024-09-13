@@ -82,6 +82,32 @@ pub struct AbsConf<'original> {
     pub encs: BTreeMap<Typ, Encoder>,
 }
 
+fn initialize_dtyp(v: VarInfo, encs: &mut BTreeMap<Typ, Encoder>) -> Res<()> {
+    let (ty, _) = v.typ.dtyp_inspect().unwrap();
+    let mut approxs = BTreeMap::new();
+    for (constr_name, sels) in ty.news.iter() {
+        let mut args = VarInfos::new();
+
+        for (sel, _) in sels.iter() {
+            let info = VarInfo::new(sel, typ::int(), args.next_index());
+            args.push(info);
+        }
+        let terms = vec![term::int_zero()];
+        let approx = enc::Approx { args, terms };
+        approxs.insert(constr_name.to_string(), approx);
+    }
+    let typ = v.typ.clone();
+    let n_params = 1;
+    let enc = enc::Enc {
+        typ,
+        n_params,
+        approxs,
+    };
+    let r = encs.insert(v.typ, enc);
+    debug_assert!(r.is_none());
+    Ok(())
+}
+
 impl<'original> AbsConf<'original> {
     fn new(original: &'original Instance) -> Res<Self> {
         let instance = AbsInstance::new(original)?;
@@ -117,32 +143,46 @@ impl<'original> AbsConf<'original> {
             .clone();
         self.encs.insert(ty.clone(), Encoder::len_ilist(ty));
 
-        self.instance.dump_as_smt2(&mut file, "before", false)?;
-        let encoded = self.encode();
-        encoded.dump_as_smt2(&mut file, "after", false)?;
+        //self.instance.dump_as_smt2(&mut file, "before", false)?;
+        //let encoded = self.encode();
+        //encoded.dump_as_smt2(&mut file, "after", false)?;
 
-        encoded.dump_as_smt2(&mut file, "w/ tag", true)?;
+        //encoded.dump_as_smt2(&mut file, "w/ tag", true)?;
 
-        match encoded.check_sat() {
-            Ok(either::Left(())) => {
-                println!("sat: {:#?}", ());
-            }
-            Ok(either::Right(x)) => {
-                println!("unsat: {x}");
-                let cex = self.instance.get_cex(&x);
-                println!("cex: {cex}");
-            }
-            Err(e) => {
-                println!("error: {:#?}", e);
-            }
-        }
+        //match encoded.check_sat() {
+        //    Ok(either::Left(())) => {
+        //        println!("sat: {:#?}", ());
+        //    }
+        //    Ok(either::Right(x)) => {
+        //        println!("unsat: {x}");
+        //        let cex = self.instance.get_cex(&x);
+        //        println!("cex: {cex}");
+        //    }
+        //    Err(e) => {
+        //        println!("error: {:#?}", e);
+        //    }
+        //}
 
         //chc::test_check_sat();
         Ok(())
     }
 
+    fn initialize_encs(&mut self) -> Res<()> {
+        let encs = &mut self.encs;
+        let instance = &self.instance;
+        for c in instance.clauses.iter() {
+            for v in c.vars.iter() {
+                if v.typ.is_dtyp() && !encs.contains_key(&v.typ) {
+                    initialize_dtyp(v.clone(), encs)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn run(&mut self) -> Res<either::Either<(), ()>> {
-        self.playground()?;
+        //self.playground()?;
+        self.initialize_encs()?;
         let r = loop {
             let encoded = self.encode();
             match encoded.check_sat()? {
@@ -202,7 +242,7 @@ impl<'a> AbsConf<'a> {
             }
             (*pred, new_args)
         });
-        println!("transformed: {}", lhs_term);
+        //println!("transformed: {}", lhs_term);
         chc::AbsClause {
             vars: new_vars,
             lhs_term,
