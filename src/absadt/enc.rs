@@ -18,11 +18,23 @@ pub struct Approx {
 impl fmt::Display for Approx {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "λ")?;
-        for arg in self.args.iter() {
-            write!(f, "{}: {}, ", arg.name, arg.typ)?;
+        let mut args = self.args.iter();
+        if let Some(arg) = args.next() {
+            write!(f, "{}: {}", arg.name, arg.typ)?;
         }
-        write!(f, ". (")?;
-        for term in self.terms.iter() {
+        for arg in args {
+            write!(f, ", {}: {}", arg.name, arg.typ)?;
+        }
+        write!(f, ". ")?;
+        if self.terms.len() == 1 {
+            return write!(f, "{}", self.terms[0]);
+        }
+        write!(f, "(")?;
+        let mut terms = self.terms.iter();
+        if let Some(term) = terms.next() {
+            write!(f, "{}", term)?;
+        }
+        for term in terms {
             write!(f, "{}, ", term)?;
         }
         write!(f, ")")
@@ -63,7 +75,7 @@ impl Approx {
     ///
     /// Used for tests.
     pub fn len_nil() -> Self {
-        let mut infos = VarInfos::new();
+        let infos = VarInfos::new();
 
         // let x_idx = infos.next_index();
         // let info = VarInfo::new("x".to_string(), typ::int(), x_idx);
@@ -108,6 +120,16 @@ pub struct Enc<Approx> {
     pub approxs: BTreeMap<String, Approx>,
 }
 
+impl<Approx: std::fmt::Display> std::fmt::Display for Enc<Approx> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "enc: {}", self.typ)?;
+        for (tag, approx) in self.approxs.iter() {
+            writeln!(f, "- {}: {}", tag, approx)?;
+        }
+        Ok(())
+    }
+}
+
 pub type Encoder = Enc<Approx>;
 
 impl<A: Approximation> Enc<A> {
@@ -147,40 +169,6 @@ impl<A: Approximation> Enc<A> {
             n_params: 1,
             approxs,
         }
-    }
-    /*
-        (define-fun-rec
-       fac ((x Int)) Int
-       (
-        ite (<= x 1)
-            1
-            (* x (fac (- x 1)))
-       )
-    )
-
-    (assert (= (fac 4) 24))
-
-    (check-sat)
-
-         */
-    pub fn write<W>(&self, w: &mut W) -> Res<()>
-    where
-        W: std::io::Write,
-    {
-        writeln!(w, "; Enc for {}", self.typ)?;
-        for i in 0..self.n_params {
-            writeln!(w, "(define-fun-rec")?;
-            writeln!(w, "{}-{}-{}", ENC_TAG, self.generate_fun_name(), i)?;
-            writeln!(w, "((x {}))", self.typ)?;
-            writeln!(w, "\n) Int")?;
-
-            println!("current datatype: {}", self.typ);
-            for (tag, approx) in self.approxs.iter() {
-                println!("(ite (is-{} x) )", tag);
-            }
-        }
-
-        Ok(())
     }
     fn get_ith_enc_rdf_name(&self, i: usize) -> String {
         format!("{}-{}", self.generate_fun_name(), i)

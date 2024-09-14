@@ -183,6 +183,11 @@ impl<'original> AbsConf<'original> {
     fn run(&mut self) -> Res<either::Either<(), ()>> {
         //self.playground()?;
         self.initialize_encs()?;
+        println!("current enc: ");
+        for (tag, e) in self.encs.iter() {
+            println!("[{}]", tag);
+            println!("{e}");
+        }
         let r = loop {
             let encoded = self.encode();
             match encoded.check_sat()? {
