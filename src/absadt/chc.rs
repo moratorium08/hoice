@@ -484,7 +484,7 @@ impl<'a> AbsInstance<'a> {
                 },
                 true,
                 if encode_tag { Some(&tag_pred) } else { None },
-                true,
+                encode_tag,
             )?;
             writeln!(w)?;
             writeln!(w)?

@@ -80,6 +80,7 @@ pub struct AbsConf<'original> {
     pub instance: AbsInstance<'original>,
     pub solver: Solver<Parser>,
     pub encs: BTreeMap<Typ, Encoder>,
+    epoch: usize,
 }
 
 fn initialize_dtyp(v: VarInfo, encs: &mut BTreeMap<Typ, Encoder>) -> Res<()> {
@@ -120,6 +121,7 @@ impl<'original> AbsConf<'original> {
             cexs,
             solver,
             encs,
+            epoch: 0,
         })
     }
 
@@ -180,16 +182,26 @@ impl<'original> AbsConf<'original> {
         Ok(())
     }
 
+    fn log_epoch(&self, e: &AbsInstance) -> Res<()> {
+        let mut encoder_s = "[encoders]\n".to_string();
+        for (tag, e) in self.encs.iter() {
+            encoder_s += &format!("[{}]", tag);
+            encoder_s += &e.to_string();
+        }
+        let mut file = self
+            .instance
+            .instance_log_files(format!("encoded-epoch-{}", self.epoch))?;
+        e.dump_as_smt2(&mut file, &encoder_s, false)?;
+        Ok(())
+    }
+
     fn run(&mut self) -> Res<either::Either<(), ()>> {
         //self.playground()?;
         self.initialize_encs()?;
-        println!("current enc: ");
-        for (tag, e) in self.encs.iter() {
-            println!("[{}]", tag);
-            println!("{e}");
-        }
         let r = loop {
+            self.epoch += 1;
             let encoded = self.encode();
+            self.log_epoch(&encoded)?;
             match encoded.check_sat()? {
                 either::Left(()) => {
                     break either::Left(());
@@ -247,7 +259,20 @@ impl<'a> AbsConf<'a> {
             }
             (*pred, new_args)
         });
-        //println!("transformed: {}", lhs_term);
+        println!("transformed: {}", lhs_term);
+        if let Some((p, args)) = &rhs {
+            print!("{p}(");
+            let mut fst = true;
+            for arg in args.iter() {
+                if fst {
+                    fst = false;
+                } else {
+                    print!(", ");
+                }
+                print!("{arg}");
+            }
+            println!(")");
+        }
         chc::AbsClause {
             vars: new_vars,
             lhs_term,
