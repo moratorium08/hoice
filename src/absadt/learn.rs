@@ -3,10 +3,112 @@ use super::enc::*;
 use crate::common::{smt::FullParser as Parser, Cex as Model, *};
 use crate::info::VarInfo;
 
-pub struct LearnCtx<'a> {
-    /// parameters for templates
+struct TemplateInfo {
     parameters: VarInfos,
     encs: BTreeMap<Typ, Enc<LinearApprox>>,
+}
+
+impl TemplateInfo {
+    /// Define paramter constants
+    fn define_parameters(&self, solver: &mut Solver<Parser>) -> Res<()> {
+        for var in self.parameters.iter() {
+            solver.declare_const(&format!("v_{}", var.idx), &var.typ.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn new_linear_approx(encs: &BTreeMap<Typ, Encoder>) -> Self {
+        let mut fvs = VarInfos::new();
+
+        let mut new_encs = BTreeMap::new();
+
+        // prepare LinearApprox for each constructor
+        for (typ, enc) in encs.iter() {
+            let mut approxs = BTreeMap::new();
+            for constr in typ.dtyp_inspect().unwrap().0.news.keys() {
+                let (ty, prms) = typ.dtyp_inspect().unwrap();
+                let mut coefs = VarMap::new();
+                // each constructor has a set of selectors
+                for (sel, ty) in ty.selectors_of(constr).unwrap().iter() {
+                    let ty = ty.to_type(Some(prms)).unwrap();
+                    let n = match encs.get(&ty) {
+                        Some(enc_for_ty) => {
+                            // prepare template coefficients for all the approximations of the argument
+                            enc_for_ty.n_params + 1
+                        }
+                        None => {
+                            assert!(ty.is_int());
+                            1
+                        }
+                    };
+                    let name = format!("{constr}-{sel}");
+                    // prepare coefs for constr-sel, which involes generating new template variables manged
+                    // at the top level (`fvs`)
+                    let args = prepare_coefs(name, &mut fvs, n);
+                    coefs.push(args);
+                }
+
+                let mut approx = enc.approxs.get(constr).unwrap().clone();
+                let n_args: usize = coefs
+                    .iter()
+                    .map(|x| x.iter().map(|_| 1).sum::<usize>())
+                    .sum();
+                // insert dummy variables for newly-introduced approximated integers
+                for _ in 0..(n_args - approx.args.len()) {
+                    approx
+                        .args
+                        .push(VarInfo::new("tmp", typ::int(), approx.args.next_index()));
+                }
+                approxs.insert(
+                    constr.to_string(),
+                    LinearApprox::new(coefs.into(), &mut fvs, approx),
+                );
+            }
+            let enc = Enc {
+                approxs,
+                typ: typ.clone(),
+                n_params: enc.n_params + 1,
+            };
+            new_encs.insert(typ.clone(), enc);
+        }
+
+        TemplateInfo {
+            parameters: fvs,
+            encs: new_encs,
+        }
+    }
+
+    fn instantiate(&self, model: &Model) -> BTreeMap<Typ, Encoder> {
+        self.encs
+            .iter()
+            .map(|(k, v)| (k.clone(), v.instantiate(&model)))
+            .collect()
+    }
+}
+
+struct TemplateScheduler {
+    idx: usize,
+}
+
+impl TemplateScheduler {
+    fn new() -> Self {
+        Self { idx: 0 }
+    }
+}
+
+impl TemplateScheduler {
+    fn get_next(&mut self, original_enc: &BTreeMap<Typ, Encoder>) -> Option<TemplateInfo> {
+        let r = match self.idx {
+            0 => TemplateInfo::new_linear_approx(original_enc),
+            _ => return None,
+        };
+        self.idx += 1;
+        Some(r)
+    }
+}
+
+pub struct LearnCtx<'a> {
+    template_gen: TemplateScheduler,
     original_encs: &'a mut BTreeMap<Typ, Encoder>,
     cex: &'a CEX,
     solver: &'a mut Solver<Parser>,
@@ -138,67 +240,15 @@ impl<'a> LearnCtx<'a> {
         solver: &'a mut Solver<Parser>,
     ) -> Self {
         let models = Vec::new();
-        let mut fvs = VarInfos::new();
 
-        let mut new_encs = BTreeMap::new();
-
-        // prepare LinearApprox for each constructor
-        for (typ, enc) in encs.iter() {
-            let mut approxs = BTreeMap::new();
-            for constr in typ.dtyp_inspect().unwrap().0.news.keys() {
-                let (ty, prms) = typ.dtyp_inspect().unwrap();
-                let mut coefs = VarMap::new();
-                // each constructor has a set of selectors
-                for (sel, ty) in ty.selectors_of(constr).unwrap().iter() {
-                    let ty = ty.to_type(Some(prms)).unwrap();
-                    let n = match encs.get(&ty) {
-                        Some(enc_for_ty) => {
-                            // prepare template coefficients for all the approximations of the argument
-                            enc_for_ty.n_params + 1
-                        }
-                        None => {
-                            assert!(ty.is_int());
-                            1
-                        }
-                    };
-                    let name = format!("{constr}-{sel}");
-                    // prepare coefs for constr-sel, which involes generating new template variables manged
-                    // at the top level (`fvs`)
-                    let args = prepare_coefs(name, &mut fvs, n);
-                    coefs.push(args);
-                }
-
-                let mut approx = enc.approxs.get(constr).unwrap().clone();
-                let n_args: usize = coefs
-                    .iter()
-                    .map(|x| x.iter().map(|_| 1).sum::<usize>())
-                    .sum();
-                // insert dummy variables for newly-introduced approximated integers
-                for _ in 0..(n_args - approx.args.len()) {
-                    approx
-                        .args
-                        .push(VarInfo::new("tmp", typ::int(), approx.args.next_index()));
-                }
-                approxs.insert(
-                    constr.to_string(),
-                    LinearApprox::new(coefs.into(), &mut fvs, approx),
-                );
-            }
-            let enc = Enc {
-                approxs,
-                typ: typ.clone(),
-                n_params: enc.n_params + 1,
-            };
-            new_encs.insert(typ.clone(), enc);
-        }
+        let template_gen = TemplateScheduler::new();
 
         LearnCtx {
-            encs: new_encs,
+            template_gen,
             original_encs: encs,
             cex,
             solver,
             models,
-            parameters: fvs,
         }
     }
 
@@ -243,18 +293,13 @@ impl<'a> LearnCtx<'a> {
         Ok(Some(cex))
     }
 
-    /// Define paramter constants
-    fn define_parameters(&mut self) -> Res<()> {
-        for var in self.parameters.iter() {
-            self.solver
-                .declare_const(&format!("v_{}", var.idx), &var.typ.to_string())?;
-        }
-        Ok(())
-    }
-
-    fn get_template_model(&mut self, form: &term::Term) -> Res<Option<Model>> {
+    fn get_template_model(
+        &mut self,
+        form: &term::Term,
+        template_info: &TemplateInfo,
+    ) -> Res<Option<Model>> {
         self.solver.reset()?;
-        self.define_parameters()?;
+        template_info.define_parameters(&mut self.solver)?;
         writeln!(self.solver, "(assert {})", form)?;
         writeln!(self.solver)?;
         let b = self.solver.check_sat()?;
@@ -263,10 +308,10 @@ impl<'a> LearnCtx<'a> {
         }
         let model = self.solver.get_model()?;
         let model = Parser.fix_model(model)?;
-        let cex = Model::of_model(&self.parameters, model, true)?;
+        let cex = Model::of_model(&template_info.parameters, model, true)?;
         Ok(Some(cex))
     }
-    fn get_instantiation(&mut self) -> Res<Option<Model>> {
+    fn get_instantiation(&mut self) -> Res<Option<BTreeMap<Typ, Encoder>>> {
         // 1. Let l1, ..., lk be li in fv(cex)
         // 2. vis = [[m[li] for m in self.models] for li in l1, ..., lk]
         // 4. Declare a1, ... ak in coef(enc) as free variables
@@ -282,7 +327,11 @@ impl<'a> LearnCtx<'a> {
 
         // templates encoder
         let mut form = Vec::new();
-        let encoder = EncodeCtx::new(&self.encs);
+        let template_info = self
+            .template_gen
+            .get_next(&self.original_encs)
+            .expect("TODO: fix this");
+        let encoder = EncodeCtx::new(&template_info.encs);
         for m in self.models.iter() {
             let mut terms = encoder.encode(&self.cex.term, &|_: &Typ, v: &VarIdx| {
                 let v = &m[*v];
@@ -298,9 +347,12 @@ impl<'a> LearnCtx<'a> {
         log_debug!("cex encoded with template");
         log_debug!("{}", form);
 
-        let m = self.get_template_model(&form)?;
-
-        Ok(m)
+        let r = self.get_template_model(&form, &template_info)?.map(|m| {
+            log_debug!("found model: {}", m);
+            let encs = template_info.instantiate(&m);
+            encs
+        });
+        Ok(r)
     }
 
     pub fn work(&mut self) -> Res<()> {
@@ -324,14 +376,7 @@ impl<'a> LearnCtx<'a> {
             // 2. If not, learn something new
             match self.get_instantiation()? {
                 None => panic!("Linear Template is not enough"),
-                Some(model) => {
-                    log_debug!("found model: {}", model);
-                    *self.original_encs = self
-                        .encs
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.instantiate(&model)))
-                        .collect()
-                }
+                Some(new_encs) => *self.original_encs = new_encs,
             }
         }
         Ok(())
