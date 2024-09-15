@@ -14,9 +14,9 @@ use crate::common::*;
 use crate::info::VarInfo;
 use crate::term::Term;
 
-use super::enc::{self, Approx, Approximation, Enc, Encoder};
+use super::enc::{self, Approximation, Enc};
 use super::hyper_res;
-use crate::common::{smt::FullParser as Parser, *};
+use crate::common::smt::FullParser as Parser;
 use hyper_res::ResolutionProof;
 
 use std::path::PathBuf;
@@ -97,7 +97,6 @@ impl AbsClause {
         w: &mut W,
         write_var: WriteVar,
         write_prd: WritePrd,
-        info: bool,
         tag_pred: Option<&str>,
         // define (idx! Int) as the top-level variable for the clause if true
         define_idx: bool,
@@ -335,7 +334,7 @@ fn handle_definite(
         match arg.get() {
             // If the argument is a variable that has not appeared so far,
             // then we just reuse it.
-            RTerm::Var(t, v) if !already_used.contains(v) => {
+            RTerm::Var(_, v) if !already_used.contains(v) => {
                 already_used.insert(v);
                 args.push(*v);
             }
@@ -523,7 +522,6 @@ impl<'a> AbsInstance<'a> {
                         Ok(())
                     }
                 },
-                true,
                 if encode_tag { Some(&tag_pred) } else { None },
                 encode_tag,
             )?;
@@ -841,7 +839,8 @@ impl<'a> AbsInstance<'a> {
     }
 }
 
-pub fn test_check_sat() {
+#[test]
+fn test_check_sat() {
     // generate a new instance
     // P(0)
     // P(x + 1) => P(x)
@@ -914,7 +913,7 @@ pub fn test_check_sat() {
         .unwrap()
         .unwrap();
     let preds = instance[c].lhs_preds();
-    for (p, argss) in preds.iter() {
+    for (_, argss) in preds.iter() {
         println!("argss: {:?}", argss);
         for args in argss.iter() {
             println!("args: {:?}", args);

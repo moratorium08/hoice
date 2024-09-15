@@ -1,9 +1,5 @@
-use crate::common::{smt::FullParser as Parser, *};
-
 use crate::common::*;
-use crate::info::{Pred, VarInfo};
-
-use super::chc::AbsInstance;
+use crate::info::VarInfo;
 
 const ENC_TAG: &str = "enc!";
 
@@ -376,12 +372,6 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
         let args: Vec<_> = argss.iter().flatten().cloned().collect();
         approx.apply(&args)
     }
-    fn handle_dtypslc(&self, typ: &Typ, name: &str, argss: &Vec<Vec<Term>>) -> Vec<Term> {
-        unimplemented!()
-    }
-    fn handle_dtyptst(&self, typ: &Typ, name: &str, argss: &Vec<Vec<Term>>) -> Vec<Term> {
-        unimplemented!()
-    }
     pub fn encode<EncodeVar>(&self, term: &'a Term, encode_var: &EncodeVar) -> Vec<Term>
     where
         EncodeVar: Fn(&'a Typ, &'a VarIdx) -> Vec<Term>,
@@ -399,12 +389,12 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
                 self.handle_dtypnew(typ, name, argss)
             }
             RTerm::DTypSlc {
-                typ, name, term, ..
+                ..
             } => {
                 unimplemented!()
             }
             RTerm::DTypTst {
-                typ, name, term, ..
+                ..
             } => {
                 unimplemented!()
             }

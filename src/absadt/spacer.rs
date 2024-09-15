@@ -60,7 +60,7 @@ impl Spacer {
             .spawn()?;
         let stdin = child.stdin.take().expect("no stdin");
         let stdout = child.stdout.take().expect("no stdout");
-        let mut stdout = BufReader::new(stdout);
+        let stdout = BufReader::new(stdout);
         Ok(Spacer {
             child,
             stdin,
@@ -74,9 +74,6 @@ impl Spacer {
         let s = s.as_ref();
         self.stdin.write_all(s)?;
         Ok(())
-    }
-    fn newline(&mut self) -> Res<()> {
-        self.write_all(b"\n")
     }
 
     fn dump_instance<I>(&mut self, instance: &I) -> Res<()>
@@ -105,6 +102,7 @@ impl Spacer {
         self.stdout.read_to_string(&mut output)?;
         parse_proof(&output)
     }
+    #[allow(dead_code)]
     fn get_model(&mut self) -> Res<CHCModel> {
         self.write_all(b"(get-model)\n")?;
         self.write_all(b"(exit)\n")?;

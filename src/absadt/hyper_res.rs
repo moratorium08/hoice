@@ -49,17 +49,8 @@ impl ResolutionProof {
     pub fn new() -> Self {
         Self { nodes: Vec::new() }
     }
-    pub fn iter(&self) -> impl Iterator<Item = &Node> {
-        self.nodes.iter()
-    }
     pub fn get_roots(&self) -> impl Iterator<Item = &Node> {
         self.nodes.iter().filter(|x| x.head.starts_with("query!"))
-    }
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Node> {
-        self.nodes.iter_mut()
-    }
-    pub fn push(&mut self, n: Node) {
-        self.nodes.push(n);
     }
 }
 
@@ -204,7 +195,7 @@ impl HyperResolutionParser {
             _ => bail!("invalid head"),
         }
     }
-    fn parse_asserted(&mut self, expr: &Value) -> Res<()> {
+    fn parse_asserted(&mut self, _expr: &Value) -> Res<()> {
         Ok(())
     }
     fn as_hyper_res(&self, c: &Cons) -> Option<Vec<i64>> {

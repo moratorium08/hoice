@@ -701,6 +701,7 @@ impl<'a> PreInstance<'a> {
     ///
     /// - the terms in the lhs are equivalent to `false`, or
     /// - the rhs is a predicate application contained in the lhs.
+    #[allow(dead_code)]
     fn is_clause_trivial(&mut self, clause_idx: ClsIdx) -> Res<bool> {
         if self.reset_solver {
             smt::reset(&mut self.solver, &self.instance)?;

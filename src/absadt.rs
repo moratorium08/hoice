@@ -37,43 +37,19 @@
 //! ## Some Assumptions
 //! - set of ADT does not change from start to end during `work`
 //!   - they are defined as the global hashconsed objects
-use chc::{AbsInstance, CEX};
+use chc::AbsInstance;
 use enc::Encoder;
-use hyper_res::ResolutionProof;
 
 use crate::common::{smt::FullParser as Parser, *};
 use crate::info::{Pred, VarInfo};
 
-use crate::common::*;
-use crate::term::Term;
 use crate::unsat_core::UnsatRes;
-use std::path::PathBuf;
 
 mod chc;
 mod enc;
 mod hyper_res;
 mod learn;
 mod spacer;
-
-/// To be removed. Just for checking some behaviors
-fn playground(instance: &Arc<Instance>) {
-    // ~~~playground~~~
-    let decs = dtyp::get_all();
-    assert!(!decs.is_empty(), "no ADT is defined");
-
-    for (name, dtyp) in decs.iter() {
-        println!("dtype name: {}\n{:#?}", name, dtyp);
-    }
-
-    let ty = dtyp::of_constructor("nil").unwrap();
-    println!("ty: {}", ty.name);
-    let idx = dtyp::TPrmIdx::from(0);
-    let ty = &ty.prms[idx];
-    println!("ty: {}", ty);
-    for c in instance.clauses().into_iter() {
-        println!("clause: {:#?}", c.vars);
-    }
-}
 
 pub struct AbsConf<'original> {
     pub cexs: Vec<chc::CEX>,
@@ -123,50 +99,6 @@ impl<'original> AbsConf<'original> {
             encs,
             epoch: 0,
         })
-    }
-
-    /// To be removed.
-    fn playground(&mut self) -> Res<()> {
-        println!("playground");
-        let list = dtyp::get("Lst2").unwrap();
-        let slcs = list.selectors_of("cons2").unwrap();
-
-        println!("selectors:");
-        for (s, t) in slcs {
-            println!("{}: {}", s, t);
-        }
-        let mut file = self.instance.instance_log_files("hoge")?;
-        let last = &self.instance.clauses[0];
-        let ty = last
-            .vars
-            .iter()
-            .find_map(|x| if x.typ.is_dtyp() { Some(&x.typ) } else { None })
-            .unwrap()
-            .clone();
-        self.encs.insert(ty.clone(), Encoder::len_ilist(ty));
-
-        //self.instance.dump_as_smt2(&mut file, "before", false)?;
-        //let encoded = self.encode();
-        //encoded.dump_as_smt2(&mut file, "after", false)?;
-
-        //encoded.dump_as_smt2(&mut file, "w/ tag", true)?;
-
-        //match encoded.check_sat() {
-        //    Ok(either::Left(())) => {
-        //        println!("sat: {:#?}", ());
-        //    }
-        //    Ok(either::Right(x)) => {
-        //        println!("unsat: {x}");
-        //        let cex = self.instance.get_cex(&x);
-        //        println!("cex: {cex}");
-        //    }
-        //    Err(e) => {
-        //        println!("error: {:#?}", e);
-        //    }
-        //}
-
-        //chc::test_check_sat();
-        Ok(())
     }
 
     fn initialize_encs(&mut self) -> Res<()> {

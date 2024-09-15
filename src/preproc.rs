@@ -281,6 +281,7 @@ pub struct Reductor<'a> {
     /// Optional strengthener by strict negative clauses.
     strict_neg: Option<StrictNeg>,
     /// Optional predicate-to-function reduction.
+    #[allow(dead_code)]
     fun_preds: Option<FunPreds>,
 }
 impl<'a> Reductor<'a> {
