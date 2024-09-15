@@ -12,6 +12,10 @@ pub struct LearnCtx<'a> {
     solver: &'a mut Solver<Parser>,
     models: Vec<Model>,
 }
+pub trait Template: Approximation {
+    fn new(coef: VarMap<VarMap<VarIdx>>, fvs: &mut VarInfos, approx: Approx) -> Self;
+    fn instantiate(&self, model: &Model) -> Approx;
+}
 
 struct LinearApprox {
     /// Existing approx
@@ -36,7 +40,7 @@ impl Approximation for LinearApprox {
     }
 }
 
-impl LinearApprox {
+impl Template for LinearApprox {
     fn new(coef: VarMap<VarMap<VarIdx>>, fvs: &mut VarInfos, approx: Approx) -> Self {
         let idx = fvs.next_index();
         let info = VarInfo::new("const_value".to_string(), typ::int(), idx);
@@ -65,7 +69,7 @@ impl LinearApprox {
     }
 }
 
-impl Enc<LinearApprox> {
+impl<T: Template> Enc<T> {
     fn instantiate(&self, model: &Model) -> Encoder {
         let mut approxs = BTreeMap::new();
         for (constr, approx) in self.approxs.iter() {
@@ -280,26 +284,14 @@ impl<'a> LearnCtx<'a> {
         let mut form = Vec::new();
         let encoder = EncodeCtx::new(&self.encs);
         for m in self.models.iter() {
-            // println!("models:");
-            // for (i, v) in m.iter().enumerate() {
-            //     println!("- v_{i}: {}", v);
-            // }
-            //let mut substs = VarHMap::new();
             let mut terms = encoder.encode(&self.cex.term, &|_: &Typ, v: &VarIdx| {
                 let v = &m[*v];
                 let terms = encoder.encode_val(v);
-                //for t in terms.iter() {
-                //    println!("- {t}");
-                //}
                 terms
             });
             form.append(&mut terms)
         }
         // solve the form
-        // println!("forms");
-        // for f in form.iter() {
-        //     println!("- {}", f);
-        // }
         let form = term::and(form);
         // We want to make form unsatisfiable
         let form = term::not(form);
