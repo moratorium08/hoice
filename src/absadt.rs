@@ -259,26 +259,15 @@ impl<'a> AbsConf<'a> {
             }
             (*pred, new_args)
         });
-        println!("transformed: {}", lhs_term);
-        if let Some((p, args)) = &rhs {
-            print!("{p}(");
-            let mut fst = true;
-            for arg in args.iter() {
-                if fst {
-                    fst = false;
-                } else {
-                    print!(", ");
-                }
-                print!("{arg}");
-            }
-            println!(")");
-        }
-        chc::AbsClause {
+        let res = chc::AbsClause {
             vars: new_vars,
             lhs_term,
             lhs_preds,
             rhs,
-        }
+        };
+        println!("bef: {}", c);
+        println!("translated: {}", res);
+        res
     }
     fn encode_sig(&self, sig: &VarMap<Typ>) -> VarMap<Typ> {
         let mut new_sig = VarMap::new();

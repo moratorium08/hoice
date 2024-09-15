@@ -26,11 +26,52 @@ pub struct PredApp {
     pub args: VarTerms,
 }
 
+impl std::fmt::Display for PredApp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "P{}(", self.pred)?;
+        let mut itr = self.args.iter();
+        if let Some(arg) = itr.next() {
+            write!(f, "{}", arg)?;
+        }
+        for arg in itr {
+            write!(f, ", {}", arg)?;
+        }
+        write!(f, ")")
+    }
+}
+
 pub struct AbsClause {
     pub vars: VarInfos,
     pub rhs: Option<(PrdIdx, Vec<VarIdx>)>,
     pub lhs_preds: Vec<PredApp>,
     pub lhs_term: Term,
+}
+
+impl std::fmt::Display for AbsClause {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.lhs_term.is_true() {
+            write!(f, "true")?;
+        } else {
+            write!(f, "{}", self.lhs_term)?;
+        }
+        for pred in self.lhs_preds.iter() {
+            write!(f, "/\\ {}", pred)?;
+        }
+        if let Some((pred, args)) = &self.rhs {
+            write!(f, " => P{}(", pred)?;
+            let mut itr = args.iter();
+            if let Some(arg) = itr.next() {
+                write!(f, "v_{}", arg)?;
+            }
+            for arg in itr {
+                write!(f, ", v_{}", arg)?;
+            }
+            write!(f, ")")?;
+        } else {
+            write!(f, " => false")?;
+        }
+        Ok(())
+    }
 }
 
 const TAG_PRED: &str = "tag!";
