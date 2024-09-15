@@ -208,7 +208,7 @@ impl<'original> AbsConf<'original> {
                 }
                 either::Right(x) => {
                     let cex = self.instance.get_cex(&x);
-                    println!("cex: {cex}");
+                    log_debug!("cex: {}", cex);
                     learn::work(&mut self.encs, &cex, &mut self.solver)?;
                 }
             }
@@ -232,7 +232,8 @@ impl<'a> AbsConf<'a> {
                 vec![term::var(*var, typ.clone())]
             }
         };
-        let lhs_term = term::and(ctx.encode(&c.lhs_term, &encode_var));
+        let r = ctx.encode(&c.lhs_term, &encode_var);
+        let lhs_term = term::and(r);
         let mut lhs_preds = Vec::with_capacity(c.lhs_preds.len());
         for lhs_app in c.lhs_preds.iter() {
             let mut new_args = VarMap::new();
@@ -265,8 +266,6 @@ impl<'a> AbsConf<'a> {
             lhs_preds,
             rhs,
         };
-        println!("bef: {}", c);
-        println!("translated: {}", res);
         res
     }
     fn encode_sig(&self, sig: &VarMap<Typ>) -> VarMap<Typ> {
@@ -318,7 +317,7 @@ pub fn work(
     instance: &Arc<Instance>,
     _profiler: &Profiler,
 ) -> Res<Option<Either<ConjCandidates, UnsatRes>>> {
-    println!("hello");
+    log_info!("ABS ADT is enabled");
     //playground(instance);
 
     let mut absconf = AbsConf::new(instance)?;

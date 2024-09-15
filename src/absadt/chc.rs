@@ -835,7 +835,6 @@ impl<'a> AbsInstance<'a> {
             either::Left(_) => Ok(either::Left(())),
             either::Right(proof) => {
                 let tree = decode_tag(proof)?;
-                println!("{tree}");
                 Ok(either::Right(tree))
             }
         }

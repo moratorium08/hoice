@@ -303,16 +303,11 @@ impl<'a> LearnCtx<'a> {
         let form = term::and(form);
         // We want to make form unsatisfiable
         let form = term::not(form);
-        println!("form: {}", form);
+        log_debug!("cex encoded with template");
+        log_debug!("{}", form);
 
         let m = self.get_template_model(&form)?;
 
-        match &m {
-            Some(m) => {
-                println!("parameters: {}", m);
-            }
-            None => unimplemented!("linear template is not enough"),
-        }
         Ok(m)
     }
 
@@ -321,13 +316,16 @@ impl<'a> LearnCtx<'a> {
         // Appendinx them to the existing encodings
         loop {
             // 1. Check if the new encoding can refute the counterexample
+            log_info!("checking enc refutes cex...");
             match self.get_model()? {
                 // The current cex is refuted
                 None => {
+                    log_info!("Yes.");
                     break;
                 }
                 Some(model) => {
-                    println!("model: {}", model);
+                    log_info!("No.");
+                    log_debug!("model: {}", model);
                     self.models.push(model);
                 }
             }
@@ -335,6 +333,7 @@ impl<'a> LearnCtx<'a> {
             match self.get_instantiation()? {
                 None => panic!("Linear Template is not enough"),
                 Some(model) => {
+                    log_debug!("found model: {}", model);
                     *self.original_encs = self
                         .encs
                         .iter()

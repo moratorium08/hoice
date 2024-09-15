@@ -35,7 +35,7 @@ impl fmt::Display for Approx {
             write!(f, "{}", term)?;
         }
         for term in terms {
-            write!(f, "{}, ", term)?;
+            write!(f, ", {}", term)?;
         }
         write!(f, ")")
     }
@@ -122,7 +122,7 @@ pub struct Enc<Approx> {
 
 impl<Approx: std::fmt::Display> std::fmt::Display for Enc<Approx> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "enc: {}", self.typ)?;
+        writeln!(f, "enc-{}", self.typ)?;
         for (tag, approx) in self.approxs.iter() {
             writeln!(f, "- {}: {}", tag, approx)?;
         }

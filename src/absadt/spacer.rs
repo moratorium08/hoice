@@ -115,7 +115,6 @@ impl Spacer {
 }
 
 fn parse_proof(output: &str) -> Res<hyper_res::ResolutionProof> {
-    println!("proof: {output}");
     let mut p = hyper_res::HyperResolutionParser::new();
     p.parse_spacer(output)
 }
@@ -134,7 +133,6 @@ where
     spacer.dump_instance(instance)?;
 
     let is_sat = spacer.check_sat()?;
-    println!("{}", is_sat);
 
     if is_sat {
         //let model = spacer.get_model()?;
