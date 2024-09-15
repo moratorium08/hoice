@@ -20,10 +20,10 @@ impl fmt::Display for Approx {
         write!(f, "λ")?;
         let mut args = self.args.iter();
         if let Some(arg) = args.next() {
-            write!(f, "{}: {}", arg.name, arg.typ)?;
+            write!(f, "v_{}: {}", arg.idx, arg.typ)?;
         }
         for arg in args {
-            write!(f, ", {}: {}", arg.name, arg.typ)?;
+            write!(f, ", v_{}: {}", arg.idx, arg.typ)?;
         }
         write!(f, ". ")?;
         if self.terms.len() == 1 {
@@ -293,9 +293,10 @@ pub fn tr_varinfos<Approx: Approximation>(
             orig2approx_var.insert(v.idx, introduced);
         } else {
             // base types (not approximated)
-            let mut v = v.clone();
-            v.idx = new_varmap.next_index();
-            new_varmap.push(v);
+            let mut new_v = v.clone();
+            new_v.idx = new_varmap.next_index();
+            new_varmap.push(new_v.clone());
+            orig2approx_var.insert(v.idx, vec![new_v].into());
         }
     }
     (new_varmap, orig2approx_var)
@@ -343,14 +344,6 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
         if argss.len() == 0 {
             return vec![term::app(op.clone(), Vec::new())];
         }
-        // println!("op: {op}");
-        // println!("argss");
-        // for args in argss.iter() {
-        //     println!("args:");
-        //     for arg in args.iter() {
-        //         println!("- {}", arg);
-        //     }
-        // }
         let l = argss[0].len();
         let mut res = Vec::with_capacity(l);
         for i in 0..l {
@@ -361,10 +354,6 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
             }
             res.push(term::app(op.clone(), new_args));
         }
-        // println!("res: ");
-        // for r in res.iter() {
-        //     println!("- {r}");
-        // }
         // if the return type is dtype, then
         // the returned vector can be longer than 1
         if typ.is_bool() && res.len() > 1 {
@@ -400,7 +389,6 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
         match term.get() {
             RTerm::Var(x, y) => {
                 encode_var(x, y)
-
             }
             RTerm::Cst(val) => self.encode_val(val),
             RTerm::App { typ, op, args, .. } => self.handle_app(typ, op, args, encode_var),

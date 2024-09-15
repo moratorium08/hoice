@@ -195,11 +195,17 @@ impl<'original> AbsConf<'original> {
         Ok(())
     }
 
+    fn refine_encs(&mut self) -> Res<()> {
+        // TODO: discard unnecessary encoders
+        Ok(())
+    }
+
     fn run(&mut self) -> Res<either::Either<(), ()>> {
         //self.playground()?;
         self.initialize_encs()?;
         let r = loop {
             self.epoch += 1;
+            log_info!("epoch: {}", self.epoch);
             let encoded = self.encode();
             self.log_epoch(&encoded)?;
             match encoded.check_sat()? {
@@ -210,6 +216,12 @@ impl<'original> AbsConf<'original> {
                     let cex = self.instance.get_cex(&x);
                     log_debug!("cex: {}", cex);
                     learn::work(&mut self.encs, &cex, &mut self.solver)?;
+                    log_info!("encs are updated");
+                    for (tag, enc) in self.encs.iter() {
+                        log_debug!("{}: {}", tag, enc);
+                    }
+                    self.cexs.push(cex);
+                    self.refine_encs()?;
                 }
             }
         };
@@ -221,16 +233,13 @@ impl<'a> AbsConf<'a> {
     pub fn encode_clause(&self, c: &chc::AbsClause) -> chc::AbsClause {
         let ctx = enc::EncodeCtx::new(&self.encs);
         let (new_vars, introduced) = enc::tr_varinfos(&self.encs, &c.vars);
-        let encode_var = |typ: &Typ, var| {
-            if let Some(x) = introduced.get(var) {
-                let mut res = Vec::new();
-                for y in x.iter() {
-                    res.push(term::var(*y.idx, y.typ.clone()));
-                }
-                res
-            } else {
-                vec![term::var(*var, typ.clone())]
+        let encode_var = |_, var| {
+            let x = introduced.get(var).unwrap();
+            let mut res = Vec::new();
+            for y in x.iter() {
+                res.push(term::var(*y.idx, y.typ.clone()));
             }
+            res
         };
         let r = ctx.encode(&c.lhs_term, &encode_var);
         let lhs_term = term::and(r);
