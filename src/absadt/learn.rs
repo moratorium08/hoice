@@ -3,12 +3,12 @@ use super::enc::*;
 use crate::common::{smt::FullParser as Parser, Cex as Model, *};
 use crate::info::VarInfo;
 
-struct TemplateInfo<T> {
+struct TemplateInfo {
     parameters: VarInfos,
-    encs: BTreeMap<Typ, Enc<T>>,
+    encs: BTreeMap<Typ, Enc<Template>>,
 }
 
-impl<T: Template> TemplateInfo<T> {
+impl TemplateInfo {
     /// Define paramter constants
     fn define_parameters(&self, solver: &mut Solver<Parser>) -> Res<()> {
         for var in self.parameters.iter() {
@@ -21,7 +21,7 @@ impl<T: Template> TemplateInfo<T> {
         encs: &BTreeMap<Typ, Encoder>,
         min: Option<i64>,
         max: Option<i64>,
-    ) -> TemplateInfo<LinearApprox> {
+    ) -> TemplateInfo {
         let mut fvs = VarInfos::new();
 
         let mut new_encs = BTreeMap::new();
@@ -101,17 +101,14 @@ impl TemplateScheduler {
 }
 
 impl TemplateScheduler {
-    fn get_next(
-        &mut self,
-        original_enc: &BTreeMap<Typ, Encoder>,
-    ) -> Option<TemplateInfo<Template>> {
+    fn get_next(&mut self, original_enc: &BTreeMap<Typ, Encoder>) -> Option<TemplateInfo> {
         const N_LIN_TEMPLATES: usize = 5;
         const PAIRS: [(i64, i64); N_LIN_TEMPLATES] =
             [(-1, 1), (-2, 2), (-4, 4), (-32, 32), (-64, 64)];
         let r = match self.idx {
-            0..N_LIN_TEMPLATES => {
-                let min = PAIRS[self.idx].0;
-                let max = PAIRS[self.idx].1;
+            n if 0 <= n && n < N_LIN_TEMPLATES => {
+                let min = PAIRS[n].0;
+                let max = PAIRS[n].1;
                 TemplateInfo::new_linear_approx(original_enc, Some(min), Some(max))
             }
             N_LIN_TEMPLATES => TemplateInfo::new_linear_approx(original_enc, None, None),
@@ -129,12 +126,16 @@ pub struct LearnCtx<'a> {
     solver: &'a mut Solver<Parser>,
     models: Vec<Model>,
 }
-pub trait Template: Approximation {
-    /// Returns a constraint that the template must satisfy
-    /// e.g. 0 <= a <= 10
-    fn constraint(&self) -> Option<Term>;
-    /// Instantiate the template with the model
-    fn instantiate(&self, model: &Model) -> Approx;
+//pub trait Template: Approximation {
+//    /// Returns a constraint that the template must satisfy
+//    /// e.g. 0 <= a <= 10
+//    fn constraint(&self) -> Option<Term>;
+//    /// Instantiate the template with the model
+//    fn instantiate(&self, model: &Model) -> Approx;
+//}
+
+pub enum Template {
+    Linaer(LinearApprox),
 }
 
 struct LinearApprox {
@@ -162,7 +163,7 @@ impl Approximation for LinearApprox {
     }
 }
 
-impl Template for LinearApprox {
+impl LinearApprox {
     fn constraint(&self) -> Option<Term> {
         let mut asserts = Vec::new();
         for c in self
@@ -222,11 +223,13 @@ impl LinearApprox {
     }
 }
 
-impl<T: Template> Enc<T> {
+impl Enc<Template> {
     fn instantiate(&self, model: &Model) -> Encoder {
         let mut approxs = BTreeMap::new();
         for (constr, approx) in self.approxs.iter() {
-            let approx = approx.instantiate(model);
+            let approx = match approx {
+                Template::Linaer(approx) => approx.instantiate(model),
+            };
             approxs.insert(constr.clone(), approx);
         }
         Encoder {
