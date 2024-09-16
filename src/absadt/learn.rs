@@ -3,12 +3,12 @@ use super::enc::*;
 use crate::common::{smt::FullParser as Parser, Cex as Model, *};
 use crate::info::VarInfo;
 
-struct TemplateInfo {
+struct TemplateInfo<T> {
     parameters: VarInfos,
-    encs: BTreeMap<Typ, Enc<LinearApprox>>,
+    encs: BTreeMap<Typ, Enc<T>>,
 }
 
-impl TemplateInfo {
+impl<T: Template> TemplateInfo<T> {
     /// Define paramter constants
     fn define_parameters(&self, solver: &mut Solver<Parser>) -> Res<()> {
         for var in self.parameters.iter() {
@@ -17,7 +17,11 @@ impl TemplateInfo {
         Ok(())
     }
 
-    fn new_linear_approx(encs: &BTreeMap<Typ, Encoder>) -> Self {
+    fn new_linear_approx(
+        encs: &BTreeMap<Typ, Encoder>,
+        min: Option<i64>,
+        max: Option<i64>,
+    ) -> TemplateInfo<LinearApprox> {
         let mut fvs = VarInfos::new();
 
         let mut new_encs = BTreeMap::new();
@@ -61,7 +65,7 @@ impl TemplateInfo {
                 }
                 approxs.insert(
                     constr.to_string(),
-                    LinearApprox::new(coefs.into(), &mut fvs, approx),
+                    LinearApprox::new(coefs.into(), &mut fvs, approx, min, max),
                 );
             }
             let enc = Enc {
@@ -97,9 +101,20 @@ impl TemplateScheduler {
 }
 
 impl TemplateScheduler {
-    fn get_next(&mut self, original_enc: &BTreeMap<Typ, Encoder>) -> Option<TemplateInfo> {
+    fn get_next(
+        &mut self,
+        original_enc: &BTreeMap<Typ, Encoder>,
+    ) -> Option<TemplateInfo<Template>> {
+        const N_LIN_TEMPLATES: usize = 5;
+        const PAIRS: [(i64, i64); N_LIN_TEMPLATES] =
+            [(-1, 1), (-2, 2), (-4, 4), (-32, 32), (-64, 64)];
         let r = match self.idx {
-            0 => TemplateInfo::new_linear_approx(original_enc),
+            0..N_LIN_TEMPLATES => {
+                let min = PAIRS[self.idx].0;
+                let max = PAIRS[self.idx].1;
+                TemplateInfo::new_linear_approx(original_enc, Some(min), Some(max))
+            }
+            N_LIN_TEMPLATES => TemplateInfo::new_linear_approx(original_enc, None, None),
             _ => return None,
         };
         self.idx += 1;
@@ -115,7 +130,10 @@ pub struct LearnCtx<'a> {
     models: Vec<Model>,
 }
 pub trait Template: Approximation {
-    fn new(coef: VarMap<VarMap<VarIdx>>, fvs: &mut VarInfos, approx: Approx) -> Self;
+    /// Returns a constraint that the template must satisfy
+    /// e.g. 0 <= a <= 10
+    fn constraint(&self) -> Option<Term>;
+    /// Instantiate the template with the model
     fn instantiate(&self, model: &Model) -> Approx;
 }
 
@@ -126,6 +144,8 @@ struct LinearApprox {
     // n_args * num of its approx
     coef: VarMap<VarMap<VarIdx>>,
     cnst: VarIdx,
+    min: Option<i64>,
+    max: Option<i64>,
 }
 
 impl Approximation for LinearApprox {
@@ -143,15 +163,26 @@ impl Approximation for LinearApprox {
 }
 
 impl Template for LinearApprox {
-    fn new(coef: VarMap<VarMap<VarIdx>>, fvs: &mut VarInfos, approx: Approx) -> Self {
-        let idx = fvs.next_index();
-        let info = VarInfo::new("const_value".to_string(), typ::int(), idx);
-        fvs.push(info);
-        Self {
-            coef,
-            cnst: idx,
-            approx,
+    fn constraint(&self) -> Option<Term> {
+        let mut asserts = Vec::new();
+        for c in self
+            .coef
+            .iter()
+            .flatten()
+            .chain(std::iter::once(&self.cnst))
+        {
+            if let Some(min) = self.min {
+                let t = term::le(term::int(min), term::var(*c, typ::int()));
+                asserts.push(t);
+            }
+
+            if let Some(max) = self.max {
+                let t = term::le(term::var(*c, typ::int()), term::int(max));
+                asserts.push(t);
+            }
         }
+
+        Some(term::and(asserts))
     }
     fn instantiate(&self, model: &Model) -> Approx {
         let mut approx = self.approx.clone();
@@ -168,6 +199,26 @@ impl Template for LinearApprox {
         approx.terms.push(term);
 
         approx
+    }
+}
+impl LinearApprox {
+    fn new(
+        coef: VarMap<VarMap<VarIdx>>,
+        fvs: &mut VarInfos,
+        approx: Approx,
+        min: Option<i64>,
+        max: Option<i64>,
+    ) -> Self {
+        let idx = fvs.next_index();
+        let info = VarInfo::new("const_value".to_string(), typ::int(), idx);
+        fvs.push(info);
+        Self {
+            coef,
+            cnst: idx,
+            approx,
+            min,
+            max,
+        }
     }
 }
 
@@ -191,7 +242,7 @@ fn test_linear_approx_apply() {
     let mut fvs = VarInfos::new();
     // dtyp = Cons(x)
     let coef = prepare_coefs("dtyp-cons", &mut fvs, 1);
-    let approx = LinearApprox::new(vec![coef].into(), &mut fvs, Approx::empty());
+    let approx = LinearApprox::new(vec![coef].into(), &mut fvs, Approx::empty(), None, None);
 
     let x = term::val(val::int(4));
     let argss = vec![x.clone()];
