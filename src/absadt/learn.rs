@@ -132,7 +132,6 @@ impl TemplateScheduler {
 }
 
 pub struct LearnCtx<'a> {
-    template_gen: TemplateScheduler,
     original_encs: &'a mut BTreeMap<Typ, Encoder>,
     cex: &'a CEX,
     solver: &'a mut Solver<Parser>,
@@ -319,10 +318,7 @@ impl<'a> LearnCtx<'a> {
     ) -> Self {
         let models = Vec::new();
 
-        let template_gen = TemplateScheduler::new();
-
         LearnCtx {
-            template_gen,
             original_encs: encs,
             cex,
             solver,
@@ -389,7 +385,10 @@ impl<'a> LearnCtx<'a> {
         let cex = Model::of_model(&template_info.parameters, model, true)?;
         Ok(Some(cex))
     }
-    fn get_instantiation(&mut self) -> Res<Option<BTreeMap<Typ, Encoder>>> {
+    fn get_instantiation(
+        &mut self,
+        template_info: TemplateInfo,
+    ) -> Res<Option<BTreeMap<Typ, Encoder>>> {
         // 1. Let l1, ..., lk be li in fv(cex)
         // 2. vis = [[m[li] for m in self.models] for li in l1, ..., lk]
         // 4. Declare a1, ... ak in coef(enc) as free variables
@@ -405,10 +404,6 @@ impl<'a> LearnCtx<'a> {
 
         // templates encoder
         let mut form = Vec::new();
-        let template_info = self
-            .template_gen
-            .get_next(&self.original_encs)
-            .expect("TODO: fix this");
         let encoder = EncodeCtx::new(&template_info.encs);
         for m in self.models.iter() {
             let mut terms = encoder.encode(&self.cex.term, &|_: &Typ, v: &VarIdx| {
@@ -437,6 +432,21 @@ impl<'a> LearnCtx<'a> {
         Ok(r)
     }
 
+    fn refine_enc(&mut self) -> Res<bool> {
+        let mut template_gen: TemplateScheduler = TemplateScheduler::new();
+
+        while let Some(template_info) = template_gen.get_next(&self.original_encs) {
+            match self.get_instantiation(template_info)? {
+                None => continue,
+                Some(new_encs) => {
+                    *self.original_encs = new_encs;
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
     pub fn work(&mut self) -> Res<()> {
         // We now only consider the linear models
         // Appendinx them to the existing encodings
@@ -456,9 +466,8 @@ impl<'a> LearnCtx<'a> {
                 }
             }
             // 2. If not, learn something new
-            match self.get_instantiation()? {
-                None => panic!("Linear Template is not enough"),
-                Some(new_encs) => *self.original_encs = new_encs,
+            if !self.refine_enc()? {
+                panic!("No appropriate template found");
             }
         }
         Ok(())
