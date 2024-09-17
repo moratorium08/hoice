@@ -1,3 +1,5 @@
+use libc::write;
+
 use super::chc::CEX;
 use super::enc::*;
 use crate::common::{smt::FullParser as Parser, Cex as Model, *};
@@ -9,6 +11,21 @@ struct TemplateInfo {
 }
 
 impl TemplateInfo {
+    fn define_constraints(&self, solver: &mut Solver<Parser>) -> Res<()> {
+        let constrs = if let Some(constrs) = self.constraint() {
+            constrs
+        } else {
+            return Ok(());
+        };
+
+        writeln!(solver, "; Constraints on template variables")?;
+        for c in constrs {
+            writeln!(solver, "(assert {})", c)?;
+        }
+        writeln!(solver)?;
+
+        Ok(())
+    }
     /// Define paramter constants
     fn define_parameters(&self, solver: &mut Solver<Parser>) -> Res<()> {
         for var in self.parameters.iter() {
@@ -89,7 +106,7 @@ impl TemplateInfo {
             .collect()
     }
 
-    fn constraint(&self) -> Option<Term> {
+    fn constraint(&self) -> Option<Vec<Term>> {
         let mut asserts = Vec::new();
         for enc in self.encs.values() {
             for approx in enc.approxs.values() {
@@ -98,7 +115,7 @@ impl TemplateInfo {
                 }
             }
         }
-        Some(term::and(asserts))
+        Some(asserts)
     }
 }
 
@@ -374,7 +391,11 @@ impl<'a> LearnCtx<'a> {
     ) -> Res<Option<Model>> {
         self.solver.reset()?;
         template_info.define_parameters(&mut self.solver)?;
+        template_info.define_constraints(&mut self.solver)?;
+
+        writeln!(self.solver, "; Target term")?;
         writeln!(self.solver, "(assert {})", form)?;
+
         writeln!(self.solver)?;
         let b = self.solver.check_sat()?;
         if !b {
@@ -406,23 +427,18 @@ impl<'a> LearnCtx<'a> {
         let mut form = Vec::new();
         let encoder = EncodeCtx::new(&template_info.encs);
         for m in self.models.iter() {
-            let mut terms = encoder.encode(&self.cex.term, &|_: &Typ, v: &VarIdx| {
-                let v = &m[*v];
-                let terms = encoder.encode_val(v);
-                terms
-            });
+            let mut terms =
+                encoder.encode(&term::not(self.cex.term.clone()), &|_: &Typ, v: &VarIdx| {
+                    let v = &m[*v];
+                    let terms = encoder.encode_val(v);
+                    terms
+                });
             form.append(&mut terms)
         }
         // solve the form
         let form = term::and(form);
-        // We want to make form unsatisfiable
-        let mut form = term::not(form);
         log_debug!("cex encoded with template");
         log_debug!("{}", form);
-
-        if let Some(constr) = template_info.constraint() {
-            form = term::and(vec![form, constr]);
-        }
 
         let r = self.get_template_model(&form, &template_info)?.map(|m| {
             log_debug!("found model: {}", m);
@@ -450,6 +466,7 @@ impl<'a> LearnCtx<'a> {
     pub fn work(&mut self) -> Res<()> {
         // We now only consider the linear models
         // Appendinx them to the existing encodings
+        let original_enc = self.original_encs.clone();
         loop {
             // 1. Check if the new encoding can refute the counterexample
             log_info!("checking enc refutes cex...");
@@ -462,12 +479,25 @@ impl<'a> LearnCtx<'a> {
                 Some(model) => {
                     log_info!("No.");
                     log_debug!("model: {}", model);
+
+                    #[cfg(debug_assertions)]
+                    {
+                        for m in self.models.iter() {
+                            assert_ne!(m, &model, "model is duplicated");
+                        }
+                    }
                     self.models.push(model);
                 }
             }
+            // reset the current encodings because it is not enough
+            *self.original_encs = original_enc.clone();
             // 2. If not, learn something new
             if !self.refine_enc()? {
                 panic!("No appropriate template found");
+            }
+            log_debug!("new_encs: ");
+            for (k, v) in self.original_encs.iter() {
+                log_debug!("{}: {}", k, v);
             }
         }
         Ok(())
