@@ -65,7 +65,7 @@ impl TemplateInfo {
                 }
                 approxs.insert(
                     constr.to_string(),
-                    LinearApprox::new(coefs.into(), &mut fvs, approx, min, max),
+                    Template::Linear(LinearApprox::new(coefs.into(), &mut fvs, approx, min, max)),
                 );
             }
             let enc = Enc {
@@ -106,7 +106,7 @@ impl TemplateScheduler {
         const PAIRS: [(i64, i64); N_LIN_TEMPLATES] =
             [(-1, 1), (-2, 2), (-4, 4), (-32, 32), (-64, 64)];
         let r = match self.idx {
-            n if 0 <= n && n < N_LIN_TEMPLATES => {
+            n if n < N_LIN_TEMPLATES => {
                 let min = PAIRS[n].0;
                 let max = PAIRS[n].1;
                 TemplateInfo::new_linear_approx(original_enc, Some(min), Some(max))
@@ -126,16 +126,17 @@ pub struct LearnCtx<'a> {
     solver: &'a mut Solver<Parser>,
     models: Vec<Model>,
 }
-//pub trait Template: Approximation {
-//    /// Returns a constraint that the template must satisfy
-//    /// e.g. 0 <= a <= 10
-//    fn constraint(&self) -> Option<Term>;
-//    /// Instantiate the template with the model
-//    fn instantiate(&self, model: &Model) -> Approx;
-//}
 
-pub enum Template {
-    Linaer(LinearApprox),
+enum Template {
+    Linear(LinearApprox),
+}
+
+impl Approximation for Template {
+    fn apply(&self, arg_terms: &[Term]) -> Vec<Term> {
+        match self {
+            Template::Linear(approx) => approx.apply(arg_terms),
+        }
+    }
 }
 
 struct LinearApprox {
@@ -228,7 +229,7 @@ impl Enc<Template> {
         let mut approxs = BTreeMap::new();
         for (constr, approx) in self.approxs.iter() {
             let approx = match approx {
-                Template::Linaer(approx) => approx.instantiate(model),
+                Template::Linear(approx) => approx.instantiate(model),
             };
             approxs.insert(constr.clone(), approx);
         }
