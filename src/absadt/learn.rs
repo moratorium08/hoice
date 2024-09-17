@@ -88,6 +88,18 @@ impl TemplateInfo {
             .map(|(k, v)| (k.clone(), v.instantiate(&model)))
             .collect()
     }
+
+    fn constraint(&self) -> Option<Term> {
+        let mut asserts = Vec::new();
+        for enc in self.encs.values() {
+            for approx in enc.approxs.values() {
+                if let Some(constr) = approx.constraint() {
+                    asserts.push(constr);
+                }
+            }
+        }
+        Some(term::and(asserts))
+    }
 }
 
 struct TemplateScheduler {
@@ -135,6 +147,19 @@ impl Approximation for Template {
     fn apply(&self, arg_terms: &[Term]) -> Vec<Term> {
         match self {
             Template::Linear(approx) => approx.apply(arg_terms),
+        }
+    }
+}
+
+impl Template {
+    fn instantiate(&self, model: &Model) -> Approx {
+        match self {
+            Template::Linear(approx) => approx.instantiate(model),
+        }
+    }
+    fn constraint(&self) -> Option<Term> {
+        match self {
+            Template::Linear(approx) => approx.constraint(),
         }
     }
 }
@@ -228,9 +253,7 @@ impl Enc<Template> {
     fn instantiate(&self, model: &Model) -> Encoder {
         let mut approxs = BTreeMap::new();
         for (constr, approx) in self.approxs.iter() {
-            let approx = match approx {
-                Template::Linear(approx) => approx.instantiate(model),
-            };
+            let approx = approx.instantiate(model);
             approxs.insert(constr.clone(), approx);
         }
         Encoder {
@@ -398,9 +421,13 @@ impl<'a> LearnCtx<'a> {
         // solve the form
         let form = term::and(form);
         // We want to make form unsatisfiable
-        let form = term::not(form);
+        let mut form = term::not(form);
         log_debug!("cex encoded with template");
         log_debug!("{}", form);
+
+        if let Some(constr) = template_info.constraint() {
+            form = term::and(vec![form, constr]);
+        }
 
         let r = self.get_template_model(&form, &template_info)?.map(|m| {
             log_debug!("found model: {}", m);
