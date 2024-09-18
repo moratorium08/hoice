@@ -132,6 +132,28 @@ impl<'original> AbsConf<'original> {
         Ok(())
     }
 
+    fn get_combined_cex(&self) -> chc::CEX {
+        let mut varmap = VarMap::new();
+        let mut form = Vec::new();
+        for cex in self.cexs.iter() {
+            let mut subst = Vec::new();
+            for v in cex.vars.iter() {
+                let mut new_v = v.clone();
+                new_v.idx = varmap.next_index();
+                subst.push((v.idx, term::var(new_v.idx, new_v.typ.clone())));
+                varmap.push(new_v);
+            }
+            let subst: VarHMap<_> = subst.into_iter().collect();
+            let t = cex.term.subst_total(&subst).unwrap().0;
+            form.push(t);
+        }
+
+        chc::CEX {
+            vars: varmap,
+            term: term::or(form),
+        }
+    }
+
     fn run(&mut self) -> Res<either::Either<(), ()>> {
         //self.playground()?;
         self.initialize_encs()?;
@@ -147,12 +169,14 @@ impl<'original> AbsConf<'original> {
                 either::Right(x) => {
                     let cex = self.instance.get_cex(&x);
                     log_debug!("cex: {}", cex);
+                    self.cexs.push(cex);
+                    let cex = self.get_combined_cex();
+                    log_debug!("combined_cex: {}", cex);
                     learn::work(&mut self.encs, &cex, &mut self.solver)?;
                     log_info!("encs are updated");
                     for (tag, enc) in self.encs.iter() {
                         log_debug!("{}: {}", tag, enc);
                     }
-                    self.cexs.push(cex);
                     self.refine_encs()?;
                 }
             }

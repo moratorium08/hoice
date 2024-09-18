@@ -1,5 +1,3 @@
-use libc::write;
-
 use super::chc::CEX;
 use super::enc::*;
 use crate::common::{smt::FullParser as Parser, Cex as Model, *};
