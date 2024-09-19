@@ -33,7 +33,7 @@ impl TemplateInfo {
     }
 
     fn new_linear_approx(
-        encs: &BTreeMap<Typ, Encoder>,
+        encs: BTreeMap<Typ, Encoder>,
         min: Option<i64>,
         max: Option<i64>,
     ) -> TemplateInfo {
@@ -117,29 +117,150 @@ impl TemplateInfo {
     }
 }
 
+/// Controls
+///   1. which Template to use
+///     - including their parameters
+///   2. which range of the existing approximations to use
 struct TemplateScheduler {
     idx: usize,
+    enc: BTreeMap<Typ, Encoder>,
 }
 
-impl TemplateScheduler {
-    fn new() -> Self {
-        Self { idx: 0 }
+enum TemplateType {
+    BoundLinear { min: i64, max: i64 },
+    Linear,
+}
+
+struct TemplateSchedItem {
+    n_encs: usize,
+    typ: TemplateType,
+}
+
+impl Approx {
+    fn restrict_approx<I: Iterator<Item = Typ>>(
+        &self,
+        cur_enc: &BTreeMap<Typ, Encoder>,
+        typs: I,
+        n_encs: usize,
+    ) -> Approx {
+        // 1. original signature
+        // 2. append arguments with n_encs
+        // 3. append terms with n_encs
+        let mut new_args = VarInfos::new();
+        for t in typs {
+            match cur_enc.get(&t) {
+                Some(_) => {
+                    for _ in 0..n_encs {
+                        new_args.push(VarInfo::new("tmp", typ::int(), new_args.next_index()));
+                    }
+                }
+                None => {
+                    new_args.push(VarInfo::new("tmp", t.clone(), new_args.next_index()));
+                }
+            }
+        }
+        let new_terms = self.terms.iter().take(n_encs).cloned().collect();
+        Approx {
+            args: new_args.into(),
+            terms: new_terms,
+        }
+    }
+}
+
+impl Encoder {
+    fn restrict_approx(
+        &self,
+        cur_enc: &BTreeMap<Typ, Encoder>,
+        typ: &Typ,
+        n_encs: usize,
+    ) -> Encoder {
+        let (ty, params) = typ.dtyp_inspect().unwrap();
+
+        let mut new_approxs = BTreeMap::new();
+        for (cnstr, args) in ty.news.iter() {
+            let approx = self.approxs.get(cnstr).unwrap();
+            let approx = approx.restrict_approx(
+                cur_enc,
+                args.iter().map(|(_, t)| t.to_type(Some(params)).unwrap()),
+                n_encs,
+            );
+            new_approxs.insert(cnstr.clone(), approx);
+        }
+        Encoder {
+            approxs: new_approxs,
+            typ: self.typ.clone(),
+            n_params: n_encs,
+        }
     }
 }
 
 impl TemplateScheduler {
-    fn get_next(&mut self, original_enc: &BTreeMap<Typ, Encoder>) -> Option<TemplateInfo> {
-        const N_LIN_TEMPLATES: usize = 5;
-        const PAIRS: [(i64, i64); N_LIN_TEMPLATES] =
-            [(-1, 1), (-2, 2), (-4, 4), (-32, 32), (-64, 64)];
-        let r = match self.idx {
-            n if n < N_LIN_TEMPLATES => {
-                let min = PAIRS[n].0;
-                let max = PAIRS[n].1;
-                TemplateInfo::new_linear_approx(original_enc, Some(min), Some(max))
+    const N_TEMPLATES: usize = 8;
+
+    const TEMPLATE_SCHDEDULING: [TemplateSchedItem; Self::N_TEMPLATES] = [
+        TemplateSchedItem {
+            n_encs: 1,
+            typ: TemplateType::BoundLinear { min: -1, max: 1 },
+        },
+        TemplateSchedItem {
+            n_encs: 2,
+            typ: TemplateType::BoundLinear { min: -1, max: 1 },
+        },
+        TemplateSchedItem {
+            n_encs: 3,
+            typ: TemplateType::BoundLinear { min: -1, max: 1 },
+        },
+        TemplateSchedItem {
+            n_encs: 3,
+            typ: TemplateType::BoundLinear { min: -2, max: 2 },
+        },
+        TemplateSchedItem {
+            n_encs: 3,
+            typ: TemplateType::BoundLinear { min: -4, max: 4 },
+        },
+        TemplateSchedItem {
+            n_encs: 3,
+            typ: TemplateType::BoundLinear { min: -32, max: 32 },
+        },
+        TemplateSchedItem {
+            n_encs: 3,
+            typ: TemplateType::BoundLinear { min: -64, max: 64 },
+        },
+        TemplateSchedItem {
+            n_encs: 3,
+            typ: TemplateType::Linear,
+        },
+    ];
+
+    fn new(enc: BTreeMap<Typ, Encoder>) -> Self {
+        Self { idx: 0, enc }
+    }
+
+    fn restrict_approx(&self, n_encs: usize) -> BTreeMap<Typ, Encoder> {
+        self.enc
+            .iter()
+            .map(|(k, enc)| {
+                let enc = enc.restrict_approx(&self.enc, k, n_encs);
+                (k.clone(), enc)
+            })
+            .collect()
+    }
+}
+
+impl std::iter::Iterator for TemplateScheduler {
+    type Item = TemplateInfo;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx >= Self::N_TEMPLATES {
+            return None;
+        }
+        let next_template = &Self::TEMPLATE_SCHDEDULING[self.idx];
+        let enc = self.restrict_approx(next_template.n_encs - 1);
+
+        let r = match next_template.typ {
+            TemplateType::BoundLinear { min, max } => {
+                TemplateInfo::new_linear_approx(enc, Some(min), Some(max))
             }
-            N_LIN_TEMPLATES => TemplateInfo::new_linear_approx(original_enc, None, None),
-            _ => return None,
+            TemplateType::Linear => TemplateInfo::new_linear_approx(enc, None, None),
         };
         self.idx += 1;
         Some(r)
@@ -446,19 +567,17 @@ impl<'a> LearnCtx<'a> {
         Ok(r)
     }
 
-    fn refine_enc(&mut self) -> Res<bool> {
-        let mut template_gen: TemplateScheduler = TemplateScheduler::new();
-
-        while let Some(template_info) = template_gen.get_next(&self.original_encs) {
+    fn refine_enc(
+        &mut self,
+        original_encs: &BTreeMap<Typ, Encoder>,
+    ) -> Res<Option<BTreeMap<Typ, Encoder>>> {
+        for template_info in TemplateScheduler::new(original_encs.clone()) {
             match self.get_instantiation(template_info)? {
                 None => continue,
-                Some(new_encs) => {
-                    *self.original_encs = new_encs;
-                    return Ok(true);
-                }
+                Some(new_encs) => return Ok(Some(new_encs)),
             }
         }
-        Ok(false)
+        Ok(None)
     }
 
     pub fn work(&mut self) -> Res<()> {
@@ -487,12 +606,11 @@ impl<'a> LearnCtx<'a> {
                     self.models.push(model);
                 }
             }
-            // reset the current encodings because it is not enough
-            *self.original_encs = original_enc.clone();
             // 2. If not, learn something new
-            if !self.refine_enc()? {
-                panic!("No appropriate template found");
-            }
+            *self.original_encs = self
+                .refine_enc(&original_enc)?
+                .expect("No appropriate template found");
+
             log_debug!("new_encs: ");
             for (k, v) in self.original_encs.iter() {
                 log_debug!("{}: {}", k, v);
