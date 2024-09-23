@@ -13,12 +13,23 @@ type ID = usize;
 #[derive(Copy, Clone, Debug)]
 pub enum V {
     Int(i64),
+    Bool(bool),
 }
 
 impl std::fmt::Display for V {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             V::Int(n) => write!(f, "I({})", n),
+            V::Bool(b) => write!(f, "B({})", b),
+        }
+    }
+}
+
+impl V {
+    pub fn as_i64(&self) -> Option<i64> {
+        match self {
+            V::Int(n) => Some(*n),
+            _ => None,
         }
     }
 }
@@ -175,7 +186,10 @@ impl HyperResolutionParser {
                 }
                 Ok(V::Int(-arg))
             }
-            _ => bail!("invalid argument of head: {}", val),
+            Value::Symbol(s) if s.as_ref() == "true" => Ok(V::Bool(true)),
+            Value::Symbol(s) if s.as_ref() == "false" => Ok(V::Bool(false)),
+            Value::Bool(b) => Ok(V::Bool(*b)),
+            _ => bail!("invalid argument of head: {}, {:?}", val, val),
         }
     }
     fn parse_head(&mut self, head: &Value) -> Res<(String, Vec<V>)> {
@@ -313,6 +327,54 @@ fn test_parse2() {
                (P 1))
              (query!0 1))))
   (mp a!3 (asserted (=> (query!0 1) false)) false)))";
+    let mut parser = HyperResolutionParser::new();
+    parser.parse_spacer(s).unwrap();
+    println!("{}", s);
+}
+
+#[test]
+fn test_bug1() {
+    let s = "(let ((a!1 (forall ((A Int) (B Int) (C Int) (D Int) (E Int) (F Int) (G Int))
+             (! (=> (and (append 1 F B G)
+                         (append 4 A B C)
+                         (append 3 D C E)
+                         (append 2 D A F)
+                         tag!8
+                         (adt_new1 0 E G true))
+                    (query!0 A B C D E F G))
+                :weight 0)))
+      (a!2 (asserted (forall ((A Int) (B Int) (C Int) (D Int))
+                       (! (let ((a!1 (and tag!6 (= B 0) (= (+ C (* (- 1) A)) 0))))
+                            (=> a!1 (append D B A C)))
+                          :weight 0))))
+      (a!3 (forall ((A Int) (B Int) (C Bool) (D Int))
+             (! (=> (and tag!2 (= A 0) (= C true) (= B 0)) (adt_new1 D A B C))
+                :weight 0))))
+(let ((a!4 ((_ hyper-res 0 0 0 1 0 2 0 3 0 4 0 5 0 6)
+             (asserted a!1)
+             ((_ hyper-res 0 0 0 1)
+               a!2
+               ((_ hyper-res 0 0) (asserted tag!6) tag!6)
+               (append 1 0 0 0))
+             ((_ hyper-res 0 0 0 1)
+               a!2
+               ((_ hyper-res 0 0) (asserted tag!6) tag!6)
+               (append 4 0 0 0))
+             ((_ hyper-res 0 0 0 1)
+               a!2
+               ((_ hyper-res 0 0) (asserted tag!6) tag!6)
+               (append 3 0 0 0))
+             ((_ hyper-res 0 0 0 1)
+               a!2
+               ((_ hyper-res 0 0) (asserted tag!6) tag!6)
+               (append 2 0 0 0))
+             ((_ hyper-res 0 0) (asserted tag!8) tag!8)
+             ((_ hyper-res 0 0 0 1)
+               (asserted a!3)
+               ((_ hyper-res 0 0) (asserted tag!2) tag!2)
+               (adt_new1 0 0 0 true))
+             (query!0 0 0 0 0 0 0 0))))
+  (mp a!4 (asserted (=> (query!0 0 0 0 0 0 0 0) false)) false)))";
     let mut parser = HyperResolutionParser::new();
     parser.parse_spacer(s).unwrap();
     println!("{}", s);

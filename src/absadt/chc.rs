@@ -574,7 +574,7 @@ pub struct Node {
     /// Name of the predicate
     pub head: String,
     /// Arguments of the predicate application for refutation
-    pub args: Vec<i64>,
+    pub args: Vec<hyper_res::V>,
     /// Children of this node in the call-tree
     pub children: Vec<usize>,
     /// Index of the clause in the original CHC
@@ -596,11 +596,7 @@ impl Node {
         let cls_id = n.children.remove(idx);
         let clsidx = *cls_map.get(&cls_id)?;
 
-        let args = n
-            .arguments
-            .into_iter()
-            .map(|hyper_res::V::Int(x)| x)
-            .collect();
+        let args = n.arguments;
         let node = Self {
             head: n.head.clone(),
             children: n.children.clone(),
@@ -777,7 +773,7 @@ impl<'a> AbsInstance<'a> {
             for child_idx in cur.children.iter() {
                 let next_node = tree.nodes.get(child_idx).unwrap();
 
-                let predidx = next_node.args[0] as usize;
+                let predidx = next_node.args[0].as_i64().unwrap() as usize;
                 let app = &clause.lhs_preds[predidx];
 
                 let args = app
