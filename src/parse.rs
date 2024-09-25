@@ -1700,7 +1700,7 @@ impl<'cxt, 's> Parser<'cxt, 's> {
 
             if let Some(pos) = self.tag_opt_pos("(") {
                 self.ws_cmt();
-                if self.tag_opt(keywords::let_) {
+                if self.word_opt(keywords::let_) {
                     n += 1;
                     self.push_bind();
                     self.ws_cmt();
@@ -1751,21 +1751,10 @@ impl<'cxt, 's> Parser<'cxt, 's> {
 
     /// Bool parser.
     pub fn bool(&mut self) -> Option<bool> {
-        let start_pos = self.pos();
-        if self.tag_opt("true") {
-            if !self.legal_id_char() {
-                Some(true)
-            } else {
-                self.backtrack_to(start_pos);
-                None
-            }
-        } else if self.tag_opt("false") {
-            if !self.legal_id_char() {
-                Some(false)
-            } else {
-                self.backtrack_to(start_pos);
-                None
-            }
+        if self.word_opt("true") {
+            Some(true)
+        } else if self.word_opt("false") {
+            Some(false)
         } else {
             None
         }
@@ -2981,16 +2970,16 @@ impl<'cxt, 's> Parser<'cxt, 's> {
             let mut ptterm = if let Some(pos) = self.tag_opt_pos("(") {
                 self.ws_cmt();
 
-                if self.tag_opt("and") {
+                if self.word_opt("and") {
                     stack.push(Frame::And(vec![]));
                     continue 'go_down;
-                } else if self.tag_opt("or") {
+                } else if self.word_opt("or") {
                     stack.push(Frame::Or(vec![]));
                     continue 'go_down;
-                } else if self.tag_opt("not") {
+                } else if self.word_opt("not") {
                     stack.push(Frame::Not);
                     continue 'go_down;
-                } else if self.tag_opt("=>") {
+                } else if self.word_opt("=>") {
                     stack.push(Frame::Impl(vec![]));
                     continue 'go_down;
                 } else {
