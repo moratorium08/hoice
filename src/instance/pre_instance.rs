@@ -436,9 +436,7 @@ impl<'a> PreInstance<'a> {
             }
             self.instance[clause].lhs_terms_checked();
             log! { @3 "trivial?" }
-            // Since Z3' timeout is not working, we skip the triviality check.
-            // self.is_clause_trivial(clause)
-            Ok(false)
+            self.is_clause_trivial(clause)
         } else {
             Ok(false)
         }
