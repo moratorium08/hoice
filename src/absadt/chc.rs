@@ -368,23 +368,20 @@ fn handle_definite(
 impl<'a> AbsInstance<'a> {
     pub fn new(original: &'a Instance) -> Res<Self> {
         let mut clauses = Vec::new();
-        let mut query = None;
+        let mut queries = Vec::new();
         for clause in original.clauses().iter() {
             match clause.rhs() {
                 Some((prd, args)) => {
                     clauses.push(handle_definite(original, clause, prd, args));
                 }
                 None => {
-                    assert!(
-                        query.is_none(),
-                        "TODO: CHCs with multiple queries are not supported so far"
-                    );
-                    query = Some(handle_query(clause));
+                    queries.push(handle_query(clause));
                 }
             }
         }
-        let query = query.unwrap();
-        clauses.push(query);
+        for query in queries {
+            clauses.push(query);
+        }
 
         let log_dir = Self::gen_logdir(original)?;
         let preds = original.preds().clone();
@@ -608,7 +605,7 @@ impl Node {
 }
 
 pub struct CallTree {
-    pub root: usize,
+    pub roots: Vec<usize>,
     pub nodes: HashMap<usize, Node>,
 }
 impl fmt::Display for Node {
@@ -632,15 +629,18 @@ impl fmt::Display for Node {
 
 impl fmt::Display for CallTree {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut q = vec![(self.root, 0)];
-        while let Some((cur, indent)) = q.pop() {
-            let n = self.nodes.get(&cur).unwrap();
-            for _ in 0..indent {
-                write!(f, "  ")?;
-            }
-            writeln!(f, "{}: {}", cur, n)?;
-            for c in n.children.iter().rev() {
-                q.push((*c, indent + 1));
+        for (i, root) in self.roots.iter().enumerate() {
+            write!(f, "Tree #{}\n", i)?;
+            let mut q = vec![(*root, 0)];
+            while let Some((cur, indent)) = q.pop() {
+                let n = self.nodes.get(&cur).unwrap();
+                for _ in 0..indent {
+                    write!(f, "  ")?;
+                }
+                writeln!(f, "{}: {}", cur, n)?;
+                for c in n.children.iter().rev() {
+                    q.push((*c, indent + 1));
+                }
             }
         }
 
@@ -654,6 +654,8 @@ impl fmt::Display for CallTree {
 /// 2. Create a map from node id of tag nodes to clause index
 /// 3. Transform each node
 pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
+    println!("decode_tag");
+    println!("{res}");
     // map from node (whose head is tag!X) id to its clause index
     let mut map = HashMap::new();
     for n in res.nodes.iter() {
@@ -666,9 +668,7 @@ pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
         }
     }
 
-    let mut v: Vec<_> = res.get_roots().collect();
-    assert!(v.len() == 1);
-    let root = v.pop().unwrap().id;
+    let roots: Vec<_> = res.get_roots().map(|node| node.id).collect();
 
     let mut nodes = HashMap::new();
     for n in res.nodes.into_iter() {
@@ -680,7 +680,7 @@ pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
         let r = nodes.insert(id, node);
         assert!(r.is_none())
     }
-    Ok(CallTree { root, nodes })
+    Ok(CallTree { roots, nodes })
 }
 
 impl super::spacer::Instance for AbsInstance<'_> {
@@ -816,8 +816,13 @@ impl<'a> AbsInstance<'a> {
         }
 
         let mut vars = VarMap::new();
-        let node = tree.nodes.get(&tree.root).unwrap();
-        let term = walk(self, &tree, &node, VarMap::new(), &mut vars);
+        let mut cexs = Vec::new();
+        for root in tree.roots.iter() {
+            let node = tree.nodes.get(root).unwrap();
+            let term = walk(self, &tree, &node, VarMap::new(), &mut vars);
+            cexs.push(term);
+        }
+        let term = term::or(cexs);
         CEX { vars, term }
     }
 

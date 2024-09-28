@@ -56,6 +56,23 @@ pub struct ResolutionProof {
     pub nodes: Vec<Node>,
 }
 
+impl std::fmt::Display for ResolutionProof {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for x in self.nodes.iter() {
+            write!(f, "{}, {}(", x.id, x.head)?;
+            for y in x.arguments.iter() {
+                write!(f, "{},", y)?;
+            }
+            write!(f, "): ")?;
+            for y in x.children.iter() {
+                write!(f, " {}", y)?;
+            }
+            writeln!(f)?;
+        }
+        Ok(())
+    }
+}
+
 impl ResolutionProof {
     pub fn new() -> Self {
         Self { nodes: Vec::new() }

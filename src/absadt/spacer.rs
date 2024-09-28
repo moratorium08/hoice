@@ -113,6 +113,7 @@ impl Spacer {
 }
 
 fn parse_proof(output: &str) -> Res<hyper_res::ResolutionProof> {
+    println!("{output}");
     let mut p = hyper_res::HyperResolutionParser::new();
     p.parse_spacer(output)
 }
