@@ -682,7 +682,7 @@ pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
                 assert!(r.is_none())
             }
             None => {
-                if roots.len() > 0 {
+                if roots.len() > 0 || !n.head.starts_with("query!") {
                     // case where there are multiple entries
                     bail!("hyper resolution is ill-structured")
                 }
