@@ -13,7 +13,16 @@ const OPTION: [&str; 14] = [
     // Disable inlining for obtaining resolution proofs appropriately
     // see https://github.com/Z3Prover/z3/issues/2430#issuecomment-514351694
     // and https://github.com/Z3Prover/z3/issues/6848
-    "fp.xform.slice=true",
+    // in my understanding, slice also should be false
+    // which prevents spacer from generating proofs such as
+    // ((set-logic HORN)
+    // (declare-fun query!1 () Bool)
+    // (declare-fun query!0 () Bool)
+    // (declare-fun lt_0!slice!2 () Bool)  <- this can be removed
+    // (proof
+    // (let ((@x2101 ((_ hyper-res 0 0 0 1) (asserted (=> lt_0!slice!2 query!0)) ((_ hyper-res 0 0) (asserted lt_0!slice!2) lt_0!slice!2) query!0)))
+    // (mp ((_ hyper-res 0 0 0 1) (asserted (=> query!0 query!1)) @x2101 query!1) (asserted (=> query!1 false)) false))))
+    "fp.xform.slice=false",
     "fp.xform.inline_linear=false",
     "fp.xform.inline_eager=false",
     "fp.xform.subsumption_checker=false",
@@ -113,6 +122,7 @@ impl Spacer {
 }
 
 fn parse_proof(output: &str) -> Res<hyper_res::ResolutionProof> {
+    log_debug!("{output}");
     let mut p = hyper_res::HyperResolutionParser::new();
     p.parse_spacer(output)
 }

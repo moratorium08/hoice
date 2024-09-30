@@ -168,6 +168,16 @@ impl HyperResolutionParser {
         let _ = self.parse_asserted(asserted.car())?;
         let mut v: Vec<_> = c.collect();
         let head = v.pop().ok_or("invalid hyper-res")?.car();
+        let head = match head {
+            Value::Symbol(s) if self.env.contains_key(s.as_ref()) => {
+                let v = self.env.get(s.as_ref()).unwrap();
+                v.as_cons().ok_or("invalid hyper-res")?.car()
+            }
+            _ => head,
+        }
+        .clone();
+
+        let head = &head;
         if let Some(e) = self.get_cache(head) {
             return Ok((e, ResolutionProof::new()));
         }
