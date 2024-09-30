@@ -655,8 +655,8 @@ impl fmt::Display for CallTree {
 /// 2. Create a map from node id of tag nodes to clause index
 /// 3. Transform each node
 pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
-    println!("decode_tag");
-    println!("{res}");
+    log_debug!("decode_tag");
+    log_debug!("{res}");
     // map from node (whose head is tag!X) id to its clause index
     let mut map = HashMap::new();
     for n in res.nodes.iter() {

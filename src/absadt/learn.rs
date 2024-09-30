@@ -131,9 +131,24 @@ enum TemplateType {
     Linear,
 }
 
+impl std::fmt::Display for TemplateType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            TemplateType::BoundLinear { min, max } => write!(f, "BoundLinear({}, {})", min, max),
+            TemplateType::Linear => write!(f, "Linear"),
+        }
+    }
+}
+
 struct TemplateSchedItem {
     n_encs: usize,
     typ: TemplateType,
+}
+
+impl std::fmt::Display for TemplateSchedItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{} (n_encs = {})", self.typ, self.n_encs)
+    }
 }
 
 impl Approx {
@@ -250,20 +265,31 @@ impl TemplateScheduler {
 impl std::iter::Iterator for TemplateScheduler {
     type Item = TemplateInfo;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx >= Self::N_TEMPLATES {
-            return None;
-        }
-        let next_template = &Self::TEMPLATE_SCHDEDULING[self.idx];
-        let enc = self.restrict_approx(next_template.n_encs - 1);
-
-        let r = match next_template.typ {
-            TemplateType::BoundLinear { min, max } => {
-                TemplateInfo::new_linear_approx(enc, Some(min), Some(max))
+        'a: loop {
+            if self.idx >= Self::N_TEMPLATES {
+                return None;
             }
-            TemplateType::Linear => TemplateInfo::new_linear_approx(enc, None, None),
-        };
-        self.idx += 1;
-        Some(r)
+            let next_template = &Self::TEMPLATE_SCHDEDULING[self.idx];
+            self.idx += 1;
+
+            for (_, v) in self.enc.iter() {
+                // case where the next_template is too large
+                if v.n_params + 1 < next_template.n_encs {
+                    continue 'a;
+                }
+            }
+
+            let enc = self.restrict_approx(next_template.n_encs - 1);
+
+            let r = match next_template.typ {
+                TemplateType::BoundLinear { min, max } => {
+                    TemplateInfo::new_linear_approx(enc, Some(min), Some(max))
+                }
+                TemplateType::Linear => TemplateInfo::new_linear_approx(enc, None, None),
+            };
+            log_info!("Template: {}", next_template);
+            break Some(r);
+        }
     }
 }
 
