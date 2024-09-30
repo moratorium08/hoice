@@ -582,7 +582,8 @@ impl Node {
     ///
     /// We retrieve the clause index from the encoded-tag predicate.
     /// `cls_map` is a map from node index of the refutation proof to the clause index in the CHC instance.
-    fn tr_from_hyper_res(mut n: hyper_res::Node, cls_map: &HashMap<usize, usize>) -> Option<Self> {
+    fn tr_from_hyper_res(n: &hyper_res::Node, cls_map: &HashMap<usize, usize>) -> Option<Self> {
+        let mut children = n.children.clone();
         let idx = n.children.iter().enumerate().find_map(|(i, x)| {
             if cls_map.contains_key(x) {
                 Some(i)
@@ -590,13 +591,13 @@ impl Node {
                 None
             }
         })?;
-        let cls_id = n.children.remove(idx);
+        let cls_id = children.remove(idx);
         let clsidx = *cls_map.get(&cls_id)?;
 
-        let args = n.arguments;
+        let args = n.arguments.clone();
         let node = Self {
             head: n.head.clone(),
-            children: n.children.clone(),
+            children,
             clsidx,
             args,
         };
@@ -668,18 +669,32 @@ pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
         }
     }
 
-    let roots: Vec<_> = res.get_roots().map(|node| node.id).collect();
-
+    let mut roots = Vec::new();
     let mut nodes = HashMap::new();
-    for n in res.nodes.into_iter() {
+    for n in res.nodes.iter() {
         if n.head.starts_with("tag!") {
             continue;
         }
         let id = n.id;
-        let node = Node::tr_from_hyper_res(n, &map).ok_or("hyper resolution is ill-structured")?;
-        let r = nodes.insert(id, node);
-        assert!(r.is_none())
+        match Node::tr_from_hyper_res(n, &map) {
+            Some(node) => {
+                let r = nodes.insert(id, node);
+                assert!(r.is_none())
+            }
+            None => {
+                if roots.len() > 0 {
+                    // case where there are multiple entries
+                    bail!("hyper resolution is ill-structured")
+                }
+                roots = n.children.iter().copied().collect()
+            }
+        }
     }
+    if roots.len() == 0 {
+        roots = res.get_roots().map(|node| node.id).collect();
+        assert_eq!(roots.len(), 1);
+    }
+    assert!(roots.len() > 0);
     Ok(CallTree { roots, nodes })
 }
 
