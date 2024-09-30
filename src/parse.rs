@@ -2400,7 +2400,7 @@ impl<'cxt, 's> Parser<'cxt, 's> {
                     op_pos,
                     bind_count,
                 )));
-            } else if self.tag_opt(keywords::op::as_) {
+            } else if self.word_opt(keywords::op::as_) {
                 return Ok(TermTokenRes::Push(TermFrame::new(
                     FrameOp::Cast,
                     op_pos,
