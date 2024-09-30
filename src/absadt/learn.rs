@@ -3,6 +3,8 @@ use super::enc::*;
 use crate::common::{smt::FullParser as Parser, Cex as Model, *};
 use crate::info::VarInfo;
 
+const CONSTRAINT_CHECK_TIMEOUT: usize = 1;
+
 struct TemplateInfo {
     parameters: VarInfos,
     encs: BTreeMap<Typ, Enc<Template>>,
@@ -513,12 +515,15 @@ impl<'a> LearnCtx<'a> {
         Ok(())
     }
 
-    fn get_model(&mut self) -> Res<Option<Model>> {
+    fn get_model(&mut self, timeout: Option<usize>) -> Res<Option<Model>> {
         self.solver.reset()?;
         self.define_datatypes()?;
         self.define_enc_funs()?;
         self.cex
             .define_assert(&mut self.solver, &self.original_encs)?;
+        if let Some(tmo) = timeout {
+            self.solver.set_option(":timeout", &format!("{}000", tmo))?;
+        }
         let b = self.solver.check_sat()?;
         if !b {
             return Ok(None);
@@ -610,16 +615,24 @@ impl<'a> LearnCtx<'a> {
         // We now only consider the linear models
         // Appendinx them to the existing encodings
         let original_enc = self.original_encs.clone();
+        let mut first = true;
         loop {
             // 1. Check if the new encoding can refute the counterexample
             log_info!("checking enc refutes cex...");
-            match self.get_model()? {
+
+            let timeout = if first {
+                first = false;
+                None
+            } else {
+                Some(CONSTRAINT_CHECK_TIMEOUT)
+            };
+            match self.get_model(timeout) {
                 // The current cex is refuted
-                None => {
+                Ok(None) => {
                     log_info!("Yes.");
                     break;
                 }
-                Some(model) => {
+                Ok(Some(model)) => {
                     log_info!("No.");
                     log_debug!("model: {}", model);
 
@@ -630,6 +643,14 @@ impl<'a> LearnCtx<'a> {
                         }
                     }
                     self.models.push(model);
+                }
+                Err(e) if e.is_timeout() || e.is_unknown() => {
+                    log_info!("Timeout or unknown");
+                    break;
+                }
+                Err(e) => {
+                    println!("err: {}", e);
+                    return Err(e);
                 }
             }
             // 2. If not, learn something new
