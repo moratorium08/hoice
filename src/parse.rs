@@ -2425,7 +2425,7 @@ impl<'cxt, 's> Parser<'cxt, 's> {
                         op_pos,
                         bind_count,
                     )));
-                } else if self.tag_opt(keywords::op::lambda_) {
+                } else if self.word_opt(keywords::op::lambda_) {
                     self.ws_cmt();
                     self.word(keywords::op::is_)?;
                     self.ws_cmt();
@@ -3392,9 +3392,9 @@ impl<'cxt, 's> Parser<'cxt, 's> {
 
         let bind_count = self.let_bindings(&VarMap::new(), &BTreeMap::new(), instance)?;
 
-        let idx = if self.tag_opt("true") {
+        let idx = if self.word_opt("true") {
             ClauseRes::Skipped
-        } else if self.tag_opt("false") {
+        } else if self.word_opt("false") {
             ClauseRes::Skipped
         } else {
             self.ws_cmt();
