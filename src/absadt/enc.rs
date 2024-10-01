@@ -348,7 +348,11 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
                 debug_assert!(args.len() == l);
                 new_args.push(args[i].clone());
             }
-            res.push(term::app(op.clone(), new_args));
+            let o = match op {
+                Op::AdtEql => Op::Eql,
+                o => o.clone(),
+            };
+            res.push(term::app(o, new_args));
         }
         // if the return type is dtype, then
         // the returned vector can be longer than 1

@@ -622,7 +622,9 @@ impl<'a> LearnCtx<'a> {
         loop {
             // 1. Check if the new encoding can refute the counterexample
             log_info!("checking enc refutes cex...");
-            pause("go?", self.profiler);
+            if conf.split_step {
+                pause("go?", self.profiler);
+            }
 
             let timeout = if first {
                 first = false;
