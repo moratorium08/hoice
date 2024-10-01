@@ -343,7 +343,7 @@ fn partial_op<'a>(
             }
         }
 
-        Op::Store | Op::Select => (),
+        Op::Store | Op::Select | Op::AdtEql => (),
 
         Op::Not | Op::ToInt | Op::ToReal => bail!(
             "partial application of unary operator ({}) makes no sense",

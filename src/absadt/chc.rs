@@ -801,7 +801,6 @@ impl<'a> AbsInstance<'a> {
 
                 terms.push(res);
             }
-
             let res = term::and(terms);
 
             match clause.rhs.as_ref() {

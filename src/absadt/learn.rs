@@ -299,6 +299,7 @@ pub struct LearnCtx<'a> {
     original_encs: &'a mut BTreeMap<Typ, Encoder>,
     cex: &'a CEX,
     solver: &'a mut Solver<Parser>,
+    profiler: &'a Profiler,
     models: Vec<Model>,
 }
 
@@ -479,6 +480,7 @@ impl<'a> LearnCtx<'a> {
         encs: &'a mut BTreeMap<Typ, Encoder>,
         cex: &'a CEX,
         solver: &'a mut Solver<Parser>,
+        profiler: &'a Profiler,
     ) -> Self {
         let models = Vec::new();
 
@@ -487,6 +489,7 @@ impl<'a> LearnCtx<'a> {
             cex,
             solver,
             models,
+            profiler,
         }
     }
 
@@ -619,6 +622,7 @@ impl<'a> LearnCtx<'a> {
         loop {
             // 1. Check if the new encoding can refute the counterexample
             log_info!("checking enc refutes cex...");
+            pause("go?", self.profiler);
 
             let timeout = if first {
                 first = false;
@@ -675,8 +679,9 @@ pub fn work<'a>(
     encs: &'a mut BTreeMap<Typ, Encoder>,
     cex: &'a CEX,
     solver: &mut Solver<Parser>,
+    profiler: &Profiler,
 ) -> Res<()> {
-    let mut learn_ctx = LearnCtx::new(encs, cex, solver);
+    let mut learn_ctx = LearnCtx::new(encs, cex, solver, profiler);
     learn_ctx.work()?;
     Ok(())
 }

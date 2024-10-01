@@ -1080,6 +1080,11 @@ macro_rules! simpl_fun {
 // Polymorphic operations.
 
 simpl_fun! {
+    // Nop
+    fn nop(_args) {
+      None
+    } ;
+
     // Equal.
     fn eql(args) {
         if args.len() == 2 {
@@ -2019,7 +2024,7 @@ simpl_fun! {
         Op::IDiv | Op::Div | Op::Rem | Op::Mod |
         Op::ToInt | Op::ToReal | Op::Store | Op::Select => (),
 
-        Op::Gt | Op::Ge | Op::Le | Op::Lt | Op::Eql | Op::Distinct |
+        Op::Gt | Op::Ge | Op::Le | Op::Lt | Op::Eql | Op::AdtEql | Op::Distinct |
         Op::Impl | Op::Not | Op::And | Op::Or => panic!(
           "illegal c_mul application {}", term
         ),

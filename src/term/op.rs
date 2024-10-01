@@ -37,6 +37,9 @@ pub enum Op {
     Impl,
     /// Equal to.
     Eql,
+    /// Specialized Eql used in absadt
+    /// For the purpose of avoiding optimizations
+    AdtEql,
     /// Negation.
     Not,
     /// Conjunction.
@@ -79,6 +82,7 @@ impl Op {
             Le => le_,
             Lt => lt_,
             Eql => eq_,
+            AdtEql => eq_,
             Not => not_,
             And => and_,
             Or => or_,
@@ -230,7 +234,7 @@ impl Op {
               }
             ),
 
-            Distinct | Eql => {
+            Distinct | Eql | AdtEql => {
                 all_same!();
                 typ::bool()
             }
@@ -326,6 +330,9 @@ impl Op {
             // Polymorphic operators.
             Distinct => eval::distinct(args),
             Eql => eval::eql(args),
+            AdtEql => {
+                bail!("adteql")
+            }
             Ite => eval::ite(args),
 
             // Boolean operators.
@@ -577,5 +584,4 @@ mod eval {
             Ok( array.select(idx) )
         } ;
     }
-
 }

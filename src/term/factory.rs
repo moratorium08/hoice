@@ -1133,6 +1133,20 @@ pub fn eq(lhs: Term, rhs: Term) -> Term {
     app(Op::Eql, vec![lhs, rhs])
 }
 
+/// Creates an equality specialized for ADT.
+///
+/// # Examples
+///
+/// ```rust
+/// # use hoice::common::*;
+/// let t = term::adteq( term::int_var(7), term::int(2) );
+/// assert_eq! { &format!("{}", t), "(= (+ v_7 (- 2)) 0)" }
+/// ```
+#[inline]
+pub fn adteq(lhs: Term, rhs: Term) -> Term {
+    app(Op::AdtEql, vec![lhs, rhs])
+}
+
 /// Creates a distinct application.
 ///
 /// # Examples
@@ -1546,6 +1560,7 @@ fn normalize_app(mut op: Op, mut args: Vec<Term>, typ: Typ) -> NormRes {
     let maybe_res = match op {
         // Polymorphic operators.
         Op::Eql => simplify::eql(&mut args),
+        Op::AdtEql => simplify::nop(&mut args),
         Op::Ite => simplify::ite(&mut args),
         Op::Distinct => simplify::distinct(&mut args),
 

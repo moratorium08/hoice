@@ -49,6 +49,7 @@ mod chc;
 mod enc;
 mod hyper_res;
 mod learn;
+mod preproc;
 mod spacer;
 
 pub struct AbsConf<'original> {
@@ -57,6 +58,7 @@ pub struct AbsConf<'original> {
     pub solver: Solver<Parser>,
     pub encs: BTreeMap<Typ, Encoder>,
     epoch: usize,
+    profiler: &'original Profiler,
 }
 
 fn initialize_dtyp(v: VarInfo, encs: &mut BTreeMap<Typ, Encoder>) -> Res<()> {
@@ -86,8 +88,9 @@ fn initialize_dtyp(v: VarInfo, encs: &mut BTreeMap<Typ, Encoder>) -> Res<()> {
 }
 
 impl<'original> AbsConf<'original> {
-    fn new(original: &'original Instance) -> Res<Self> {
-        let instance = AbsInstance::new(original)?;
+    fn new(original: &'original Instance, profiler: &'original Profiler) -> Res<Self> {
+        let mut instance = AbsInstance::new(original)?;
+        preproc::work(&mut instance);
         let cexs = Vec::new();
         let solver = conf.solver.spawn("absadt", Parser, original)?;
         let encs = BTreeMap::new();
@@ -98,6 +101,7 @@ impl<'original> AbsConf<'original> {
             solver,
             encs,
             epoch: 0,
+            profiler,
         })
     }
 
@@ -160,6 +164,9 @@ impl<'original> AbsConf<'original> {
         let r = loop {
             self.epoch += 1;
             log_info!("epoch: {}", self.epoch);
+            if conf.split_step {
+                pause("go?", &self.profiler);
+            }
             let encoded = self.encode();
             self.log_epoch(&encoded)?;
             match encoded.check_sat()? {
@@ -172,7 +179,7 @@ impl<'original> AbsConf<'original> {
                     self.cexs.push(cex);
                     let cex = self.get_combined_cex();
                     log_debug!("combined_cex: {}", cex);
-                    learn::work(&mut self.encs, &cex, &mut self.solver)?;
+                    learn::work(&mut self.encs, &cex, &mut self.solver, &self.profiler)?;
                     log_info!("encs are updated");
                     for (tag, enc) in self.encs.iter() {
                         log_debug!("{}: {}", tag, enc);
@@ -280,12 +287,12 @@ impl<'a> AbsConf<'a> {
 /// [`UnsatRes`]: ../unsat_core/enum.UnsatRes.html (UnsatRes struct)
 pub fn work(
     instance: &Arc<Instance>,
-    _profiler: &Profiler,
+    profiler: &Profiler,
 ) -> Res<Option<Either<ConjCandidates, UnsatRes>>> {
     log_info!("ABS ADT is enabled");
     //playground(instance);
 
-    let mut absconf = AbsConf::new(instance)?;
+    let mut absconf = AbsConf::new(instance, profiler)?;
     let r = match absconf.run()? {
         either::Left(()) => either::Left(ConjCandidates::new()),
         either::Right(_) => either::Right(UnsatRes::None),
