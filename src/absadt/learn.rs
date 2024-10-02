@@ -526,6 +526,8 @@ impl<'a> LearnCtx<'a> {
             .define_assert_with_enc(&mut self.solver, &self.original_encs)?;
         if let Some(tmo) = timeout {
             self.solver.set_option(":timeout", &format!("{}000", tmo))?;
+        } else {
+            self.solver.set_option(":timeout", "4294967295")?;
         }
         let b = self.solver.check_sat()?;
         if !b {

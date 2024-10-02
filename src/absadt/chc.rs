@@ -437,9 +437,9 @@ impl<'a> AbsInstance<'a> {
         gen_additional(w)?;
         writeln!(w)?;
 
-        writeln!(w, "; Datatypes")?;
+        // writeln!(w, "; Datatypes")?;
 
-        dtyp::write_all(w, "")?;
+        // dtyp::write_all(w, "")?;
 
         dtyp::write_constructor_map(w, "; ")?;
         writeln!(w)?;
