@@ -176,8 +176,15 @@ impl<'original> AbsConf<'original> {
                 either::Right(x) => {
                     let cex = self.instance.get_cex(&x);
                     log_debug!("cex: {}", cex);
+                    if let Some(b) = cex.check_sat_opt(&mut self.solver)? {
+                        // unsat
+                        if b {
+                            break either::Right(());
+                        }
+                    }
                     self.cexs.push(cex);
                     let cex = self.get_combined_cex();
+
                     log_debug!("combined_cex: {}", cex);
                     learn::work(&mut self.encs, &cex, &mut self.solver, &self.profiler)?;
                     log_info!("encs are updated");

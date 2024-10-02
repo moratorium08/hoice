@@ -21,6 +21,8 @@ use hyper_res::ResolutionProof;
 
 use std::path::PathBuf;
 
+const CHECK_SAT_TIMEOUT: usize = 10;
+
 pub struct PredApp {
     pub pred: PrdIdx,
     pub args: VarTerms,
@@ -724,11 +726,7 @@ impl fmt::Display for CEX {
 }
 
 impl CEX {
-    pub fn define_assert<Approx: Approximation>(
-        &self,
-        solver: &mut Solver<Parser>,
-        encs: &BTreeMap<Typ, Enc<Approx>>,
-    ) -> Res<()> {
+    fn define_consts(&self, solver: &mut Solver<Parser>) -> Res<()> {
         for var in self.vars.iter() {
             let mut varset = VarSet::new();
             varset.insert(var.idx);
@@ -737,6 +735,14 @@ impl CEX {
                 solver.declare_const(&format!("v_{}", var.idx), &var.typ.to_string())?;
             }
         }
+        Ok(())
+    }
+    pub fn define_assert_with_enc<Approx: Approximation>(
+        &self,
+        solver: &mut Solver<Parser>,
+        encs: &BTreeMap<Typ, Enc<Approx>>,
+    ) -> Res<()> {
+        self.define_consts(solver)?;
 
         let enc_ctx = enc::EncodeCtx::new(encs);
         let f = |typ: &Typ, var| match encs.get(&typ) {
@@ -751,6 +757,32 @@ impl CEX {
         writeln!(solver)?;
 
         Ok(())
+    }
+
+    pub fn define_assert(&self, solver: &mut Solver<Parser>) -> Res<()> {
+        dtyp::write_all(solver, "")?;
+        self.define_consts(solver)?;
+        writeln!(solver, "(assert {})", self.term)?;
+        Ok(())
+    }
+
+    /// returns true when it is satisfiable
+    pub fn check_sat_opt(&self, solver: &mut Solver<Parser>) -> Res<Option<bool>> {
+        solver.reset()?;
+        solver.set_option(":timeout", &format!("{}000", CHECK_SAT_TIMEOUT))?;
+        self.define_assert(solver)?;
+        match solver.check_sat() {
+            Ok(true) => Ok(Some(true)),
+            Ok(false) => Ok(Some(false)),
+            Err(e) => {
+                let e: Error = e.into();
+                if e.is_timeout() {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            }
+        }
     }
 }
 

@@ -523,7 +523,7 @@ impl<'a> LearnCtx<'a> {
         self.define_datatypes()?;
         self.define_enc_funs()?;
         self.cex
-            .define_assert(&mut self.solver, &self.original_encs)?;
+            .define_assert_with_enc(&mut self.solver, &self.original_encs)?;
         if let Some(tmo) = timeout {
             self.solver.set_option(":timeout", &format!("{}000", tmo))?;
         }
