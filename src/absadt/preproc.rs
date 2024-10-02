@@ -8,6 +8,7 @@
 //!
 use super::chc::*;
 use crate::common::*;
+use crate::info::VarInfo;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum Polarity {
@@ -72,59 +73,98 @@ fn handle_equality(t: &term::Term, pol: Polarity) -> Term {
     }
 }
 
+fn slcs_to_args(
+    prms: &dtyp::TPrmMap<Typ>,
+    slcs: &[(String, dtyp::PartialTyp)],
+    varinfos: &mut VarInfos,
+) -> Vec<(VarIdx, Typ)> {
+    let mut args = Vec::new();
+    // return the index of the selected variable
+    for (_, sel_ty) in slcs.iter() {
+        let new_var = varinfos.next_index();
+        let sel_ty = sel_ty.to_type(Some(prms)).unwrap();
+        let new_var_info = VarInfo::new("tmp", sel_ty.clone(), new_var);
+        varinfos.push(new_var_info);
+        args.push((new_var, sel_ty));
+    }
+    args
+}
+
+fn find_other_selectors<'a>(dty: &'a DTyp, selector: &str) -> Res<(&'a String, &'a dtyp::CArgs)> {
+    for (constr_name, slcs) in dty.news.iter() {
+        for (sel, _) in slcs.iter() {
+            if sel == selector {
+                return Ok((constr_name, slcs));
+            }
+        }
+    }
+    bail!("Selector {} is not found in the type {}", selector, dty)
+}
+
 /// Remove all the selectors and testers
-fn remove_slc_tst_inner(t: &Term, v: &mut VarInfos, additional_constrs: &mut Vec<Term>) -> Term {
+fn remove_slc_tst_inner(
+    t: &Term,
+    varinfos: &mut VarInfos,
+    additional_constrs: &mut Vec<Term>,
+) -> Term {
     match t.get() {
         RTerm::Var(_, _) | RTerm::Cst(_) => t.clone(),
         RTerm::CArray { typ, term, .. } => {
-            let term = remove_slc_tst_inner(term, v, additional_constrs);
+            let term = remove_slc_tst_inner(term, varinfos, additional_constrs);
             term::cst_array(typ.clone(), term)
         }
-        RTerm::App {
-            depth,
-            typ,
-            op,
-            args,
-        } => {
+        RTerm::App { op, args, .. } => {
             let args = args
                 .iter()
-                .map(|t| remove_slc_tst_inner(t, v, additional_constrs))
+                .map(|t| remove_slc_tst_inner(t, varinfos, additional_constrs))
                 .collect();
             term::app(op.clone(), args)
         }
         RTerm::DTypNew {
-            depth,
-            typ,
-            name,
-            args,
+            typ, name, args, ..
         } => {
             let args = args
                 .iter()
-                .map(|t| remove_slc_tst_inner(t, v, additional_constrs))
+                .map(|t| remove_slc_tst_inner(t, varinfos, additional_constrs))
                 .collect();
             term::dtyp_new(typ.clone(), name, args)
         }
-        RTerm::DTypSlc {
-            depth,
-            typ,
-            name,
-            term,
-        } => todo!(),
-        RTerm::DTypTst {
-            typ, name, term, ..
-        } => {
+        RTerm::DTypSlc { name, term, .. } => {
             println!("name: {}", name);
-            todo!()
+            let term_typ = term.typ();
+            let (dty, prms) = term_typ.dtyp_inspect().unwrap();
+            let (constructor_name, slcs) = find_other_selectors(dty, name).unwrap();
+            let args = slcs_to_args(prms, slcs, varinfos);
+
+            let idx = slcs
+                .iter()
+                .enumerate()
+                .find_map(|(idx, (sel, _))| if sel == name { Some(idx) } else { None })
+                .unwrap();
+            let target_arg = args[idx].clone();
+
+            let args = args.into_iter().map(|(v, t)| term::var(v, t)).collect();
+            let lhs = term::dtyp_new(term.typ(), constructor_name, args);
+            let eq = term::eq(lhs.clone(), term.clone());
+            additional_constrs.push(eq);
+            term::var(target_arg.0, target_arg.1)
         }
-        RTerm::Fun {
-            depth,
-            typ,
-            name,
-            args,
-        } => {
+        RTerm::DTypTst { name, term, .. } => {
+            let term_typ = term.typ();
+            let (ty, prms) = term_typ.dtyp_inspect().unwrap();
+            let slcs = ty.selectors_of(name).unwrap();
+            let args = slcs_to_args(prms, slcs, varinfos)
+                .into_iter()
+                .map(|(v, t)| term::var(v, t))
+                .collect();
+            let lhs = term::dtyp_new(term.typ(), name, args);
+            let eq = term::eq(lhs.clone(), term.clone());
+            eq
+        }
+        RTerm::Fun { name, args, .. } => {
             let args = args
                 .iter()
-                .map(|t| remove_slc_tst_inner(t, v, additional_constrs))
+                .map(|t| remove_slc_tst_inner(t, varinfos, additional_constrs))
                 .collect();
             term::fun(name.clone(), args)
         }
@@ -134,8 +174,16 @@ fn remove_slc_tst_inner(t: &Term, v: &mut VarInfos, additional_constrs: &mut Vec
 fn remove_slc_tst(c: &mut AbsClause) {
     let mut constrs = Vec::new();
     let t = remove_slc_tst_inner(&c.lhs_term, &mut c.vars, &mut constrs);
+    for p in c.lhs_preds.iter_mut() {
+        let args: Vec<_> = p
+            .args
+            .iter()
+            .map(|t| remove_slc_tst_inner(t, &mut c.vars, &mut constrs))
+            .collect();
+        let args: VarMap<_> = args.into();
+        p.args = args.into();
+    }
     constrs.push(t);
-    // todo: handle arguments of predicates
     c.lhs_term = term::and(constrs);
 }
 
@@ -155,7 +203,7 @@ pub struct AbsClause {
 #[test]
 fn test_remove_slc_tst() {
     use crate::info::VarInfo;
-    let mut preds = Preds::new();
+    let preds = Preds::new();
     let p = preds.next_index();
     let rhs = None;
 
@@ -194,7 +242,9 @@ fn test_remove_slc_tst() {
         lhs_preds: vec![p],
         lhs_term,
     };
+    println!("clause: {}", c);
     remove_slc_tst(&mut c);
+    println!("transformed: {}", c);
 
     // check if all the selectors and testers are removed from lhs_term and lhs_preds
     fn check_no_slc_tst(t: &Term) {
