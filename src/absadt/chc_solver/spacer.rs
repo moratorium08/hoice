@@ -4,6 +4,7 @@
 //! unsat-core. This module is intended to be temporary; we should move the
 //! functionality to rsmt2 or some other place.
 
+use super::{Instance as InstanceT, *};
 use crate::absadt::hyper_res;
 use crate::common::*;
 use std::io::{BufRead, BufReader};
@@ -51,13 +52,36 @@ impl Drop for Spacer {
     }
 }
 
-pub trait Instance {
-    fn dump_as_smt2<W, Options>(&self, w: &mut W, prefix: Options) -> Res<()>
+impl CHCSolver for Spacer {
+    fn write_all<S>(&mut self, s: S) -> Res<()>
     where
-        W: std::io::Write,
-        Options: AsRef<str>;
-}
+        S: AsRef<[u8]>,
+    {
+        let s = s.as_ref();
+        self.stdin.write_all(s)?;
+        Ok(())
+    }
 
+    fn dump_instance<I>(&mut self, instance: &I) -> Res<()>
+    where
+        I: InstanceT,
+    {
+        let options = "(set-option :produce-proofs true)\n(set-option :pp.pretty_proof true)\n(set-option :produce-unsat-cores true)";
+        instance.dump_as_smt2(&mut self.stdin, options)?;
+        Ok(())
+    }
+    fn check_sat(&mut self) -> Res<bool> {
+        let mut line = String::new();
+        self.stdout.read_line(&mut line)?;
+        if line.starts_with("sat") {
+            Ok(true)
+        } else if line.starts_with("unsat") {
+            Ok(false)
+        } else {
+            bail!("Unexpected output: {}", line)
+        }
+    }
+}
 impl Spacer {
     fn new() -> Res<Spacer> {
         let mut args = OPTION.to_vec();
@@ -76,34 +100,6 @@ impl Spacer {
             stdout,
         })
     }
-    fn write_all<S>(&mut self, s: S) -> Res<()>
-    where
-        S: AsRef<[u8]>,
-    {
-        let s = s.as_ref();
-        self.stdin.write_all(s)?;
-        Ok(())
-    }
-
-    fn dump_instance<I>(&mut self, instance: &I) -> Res<()>
-    where
-        I: Instance,
-    {
-        let options = "(set-option :produce-proofs true)\n(set-option :pp.pretty_proof true)\n(set-option :produce-unsat-cores true)";
-        instance.dump_as_smt2(&mut self.stdin, options)?;
-        Ok(())
-    }
-    fn check_sat(&mut self) -> Res<bool> {
-        let mut line = String::new();
-        self.stdout.read_line(&mut line)?;
-        if line.starts_with("sat") {
-            Ok(true)
-        } else if line.starts_with("unsat") {
-            Ok(false)
-        } else {
-            bail!("Unexpected output: {}", line)
-        }
-    }
     fn get_proof(&mut self) -> Res<hyper_res::ResolutionProof> {
         self.write_all(b"(get-proof)\n")?;
         self.write_all(b"(exit)\n")?;
@@ -118,6 +114,11 @@ impl Spacer {
         let mut output = String::new();
         self.stdout.read_to_string(&mut output)?;
         parse_model(&output)
+    }
+    #[allow(dead_code)]
+    fn set_timeout(&mut self, sec: usize) -> Res<()> {
+        self.write_all(format!("(set-option :timeout {}000)\n", sec))?;
+        Ok(())
     }
 }
 
@@ -135,7 +136,7 @@ fn parse_model(_output: &str) -> Res<CHCModel> {
 
 pub fn run_spacer<I>(instance: &I) -> Res<either::Either<(), hyper_res::ResolutionProof>>
 where
-    I: Instance,
+    I: InstanceT,
 {
     let mut spacer = Spacer::new()?;
     spacer.dump_instance(instance)?;

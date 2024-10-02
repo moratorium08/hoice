@@ -46,11 +46,11 @@ use crate::info::{Pred, VarInfo};
 use crate::unsat_core::UnsatRes;
 
 mod chc;
+mod chc_solver;
 mod enc;
 mod hyper_res;
 mod learn;
 mod preproc;
-mod spacer;
 
 pub struct AbsConf<'original> {
     pub cexs: Vec<chc::CEX>,

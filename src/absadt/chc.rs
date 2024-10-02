@@ -22,6 +22,7 @@ use hyper_res::ResolutionProof;
 use std::path::PathBuf;
 
 const CHECK_SAT_TIMEOUT: usize = 10;
+const CHECK_CHC_TIMEOUT: usize = 100;
 
 pub struct PredApp {
     pub pred: PrdIdx,
@@ -700,7 +701,7 @@ pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
     Ok(CallTree { roots, nodes })
 }
 
-impl super::spacer::Instance for AbsInstance<'_> {
+impl super::chc_solver::Instance for AbsInstance<'_> {
     fn dump_as_smt2<File, Option>(&self, w: &mut File, options: Option) -> Res<()>
     where
         File: Write,
@@ -875,7 +876,14 @@ impl<'a> AbsInstance<'a> {
     /// Check satisfiability of the query
     /// Returns () when it' sat, and a counterexample when it's unsat
     pub fn check_sat(&self) -> Res<either::Either<(), CallTree>> {
-        let res = super::spacer::run_spacer(self)?;
+        // since eld seems better, we first try eld with timeout
+        let b = super::chc_solver::run_eldarica(self, Some(CHECK_CHC_TIMEOUT))
+            .map_err(|e| println!("{}", e))
+            .unwrap_or(false);
+        if b {
+            return Ok(either::Left(()));
+        }
+        let res = super::chc_solver::run_spacer(self)?;
         match res {
             either::Left(_) => Ok(either::Left(())),
             either::Right(proof) => {
