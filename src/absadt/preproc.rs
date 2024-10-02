@@ -130,7 +130,6 @@ fn remove_slc_tst_inner(
             term::dtyp_new(typ.clone(), name, args)
         }
         RTerm::DTypSlc { name, term, .. } => {
-            println!("name: {}", name);
             let term_typ = term.typ();
             let (dty, prms) = term_typ.dtyp_inspect().unwrap();
             let (constructor_name, slcs) = find_other_selectors(dty, name).unwrap();
@@ -188,8 +187,8 @@ fn remove_slc_tst(c: &mut AbsClause) {
 }
 
 fn handle_clause(c: &mut AbsClause) {
-    c.lhs_term = handle_equality(&c.lhs_term, Polarity::pos());
     remove_slc_tst(c);
+    c.lhs_term = handle_equality(&c.lhs_term, Polarity::pos());
 }
 
 /*
