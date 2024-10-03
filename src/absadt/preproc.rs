@@ -130,6 +130,7 @@ fn remove_slc_tst_inner(
             term::dtyp_new(typ.clone(), name, args)
         }
         RTerm::DTypSlc { name, term, .. } => {
+            let term = remove_slc_tst_inner(term, varinfos, additional_constrs);
             let term_typ = term.typ();
             let (dty, prms) = term_typ.dtyp_inspect().unwrap();
             let (constructor_name, slcs) = find_other_selectors(dty, name).unwrap();
@@ -149,6 +150,7 @@ fn remove_slc_tst_inner(
             term::var(target_arg.0, target_arg.1)
         }
         RTerm::DTypTst { name, term, .. } => {
+            let term = remove_slc_tst_inner(term, varinfos, additional_constrs);
             let term_typ = term.typ();
             let (ty, prms) = term_typ.dtyp_inspect().unwrap();
             let slcs = ty.selectors_of(name).unwrap();
