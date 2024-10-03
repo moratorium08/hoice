@@ -61,8 +61,8 @@ pub struct AbsConf<'original> {
     profiler: &'original Profiler,
 }
 
-fn initialize_dtyp(v: VarInfo, encs: &mut BTreeMap<Typ, Encoder>) -> Res<()> {
-    let (ty, _) = v.typ.dtyp_inspect().unwrap();
+fn initialize_dtyp(typ: Typ, encs: &mut BTreeMap<Typ, Encoder>) -> Res<()> {
+    let (ty, _) = typ.dtyp_inspect().unwrap();
     let mut approxs = BTreeMap::new();
     for (constr_name, sels) in ty.news.iter() {
         let mut args = VarInfos::new();
@@ -75,15 +75,34 @@ fn initialize_dtyp(v: VarInfo, encs: &mut BTreeMap<Typ, Encoder>) -> Res<()> {
         let approx = enc::Approx { args, terms };
         approxs.insert(constr_name.to_string(), approx);
     }
-    let typ = v.typ.clone();
+    let typ = typ.clone();
     let n_params = 1;
     let enc = enc::Enc {
-        typ,
+        typ: typ.clone(),
         n_params,
         approxs,
     };
-    let r = encs.insert(v.typ, enc);
+    let r = encs.insert(typ, enc);
     debug_assert!(r.is_none());
+    Ok(())
+}
+
+fn initialize_encs_for_term(t: &Term, encs: &mut BTreeMap<Typ, Encoder>) -> Res<()> {
+    let typ = t.typ();
+    if typ.is_dtyp() && !encs.contains_key(&typ) {
+        initialize_dtyp(typ, encs)?;
+    }
+    match t.get() {
+        RTerm::Var(_, _) | RTerm::Cst(_) => (),
+        RTerm::CArray { term, .. } | RTerm::DTypSlc { term, .. } | RTerm::DTypTst { term, .. } => {
+            initialize_encs_for_term(term, encs)?;
+        }
+        RTerm::App { args, .. } | RTerm::DTypNew { args, .. } | RTerm::Fun { args, .. } => {
+            for arg in args.iter() {
+                initialize_encs_for_term(arg, encs)?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -106,14 +125,19 @@ impl<'original> AbsConf<'original> {
     }
 
     fn initialize_encs(&mut self) -> Res<()> {
-        let encs = &mut self.encs;
         let instance = &self.instance;
         for c in instance.clauses.iter() {
             for v in c.vars.iter() {
-                if v.typ.is_dtyp() && !encs.contains_key(&v.typ) {
-                    initialize_dtyp(v.clone(), encs)?;
+                if v.typ.is_dtyp() && !self.encs.contains_key(&v.typ) {
+                    initialize_dtyp(v.typ.clone(), &mut self.encs)?;
                 }
             }
+            for p in c.lhs_preds.iter() {
+                for t in p.args.iter() {
+                    initialize_encs_for_term(t, &mut self.encs)?;
+                }
+            }
+            initialize_encs_for_term(&c.lhs_term, &mut self.encs)?;
         }
         Ok(())
     }

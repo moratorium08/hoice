@@ -363,15 +363,7 @@ impl<'a, Approx: Approximation> EncodeCtx<'a, Approx> {
         res
     }
     fn handle_dtypnew(&self, typ: &Typ, name: &str, argss: Vec<Vec<Term>>) -> Vec<Term> {
-        let enc = if let Some(enc) = self.encs.get(typ) {
-            enc
-        } else {
-            let mut res = Vec::new();
-            for args in argss.iter() {
-                res.push(term::dtyp_new(typ.clone(), name.to_string(), args.clone()));
-            }
-            return res;
-        };
+        let enc = self.encs.get(typ).unwrap();
         let approx = enc.approxs.get(name).unwrap();
         let args: Vec<_> = argss.iter().flatten().cloned().collect();
         approx.apply(&args)
