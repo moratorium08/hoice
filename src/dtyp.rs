@@ -1361,11 +1361,6 @@ impl RDTyp {
                 }
             }
         }
-        for (_, t) in &args {
-            for name in t.iter_free_dtype_names() {
-                self.add_dep(name.clone())
-            }
-        }
 
         let _prev = self.news.insert(name, args);
         debug_assert_eq! { _prev, None }

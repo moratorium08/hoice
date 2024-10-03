@@ -1550,6 +1550,16 @@ impl<'cxt, 's> Parser<'cxt, 's> {
         self.tag(")")
             .chain_err(|| "closing the list of datatype declaration")?;
 
+        // Add dependency information
+        for i in 0..final_dtyps.len() {
+            for j in 0..final_dtyps.len() {
+                if i != j {
+                    let name = final_dtyps[j].name.clone();
+                    final_dtyps[i].add_dep(name);
+                }
+            }
+        }
+
         match dtyp::new_recs(final_dtyps, |pos, blah| self.error(pos, blah)) {
             Err((index, err)) => bail!(err.chain_err(|| self.error(
                 dtyps_pos[index],
