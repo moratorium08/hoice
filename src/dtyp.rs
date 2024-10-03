@@ -530,12 +530,57 @@ pub type DTyp = Arc<RDTyp>;
 /// to.
 pub type CArgs = Vec<(String, PartialTyp)>;
 
+// Insertion order matters when data types are dumped as smt2
+pub struct DTypInfos {
+    /// Name of dtypes; for the insertion order
+    keys: BTreeMap<String, VarIdx>,
+    /// the items
+    map: VarMap<DTyp>,
+}
+
+impl DTypInfos {
+    pub fn new() -> Self {
+        DTypInfos {
+            keys: BTreeMap::new(),
+            map: VarMap::new(),
+        }
+    }
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+    pub fn insert(&mut self, key: String, data: DTyp) -> Option<DTyp> {
+        let next_index = self.map.next_index();
+        if let Some(x) = self.keys.insert(key, next_index) {
+            let ptr = &mut self.map[x];
+            let data = std::mem::replace(ptr, data);
+            return Some(data);
+        }
+        self.map.push(data);
+        None
+    }
+
+    pub fn get<'a, S>(&'a self, key: S) -> Option<&'a DTyp>
+    where
+        S: AsRef<str>,
+    {
+        self.keys.get(key.as_ref()).map(|k| &self.map[*k])
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &DTyp)> {
+        self.map.iter().map(|d| (&d.name, d))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
+}
+
 /// Type of the datatype factory.
-type Factory = RwLock<BTreeMap<String, DTyp>>;
+type Factory = RwLock<DTypInfos>;
 lazy_static! {
     /// Datatype factory.
     static ref factory: Factory = RwLock::new(
-        BTreeMap::new()
+        DTypInfos::new()
     ) ;
 
     /// Set of reserved datatypes.
@@ -547,7 +592,7 @@ lazy_static! {
 
     /// Map from constructors to datatypes.
     static ref constructor_map: Factory = RwLock::new(
-        BTreeMap::new()
+        DTypInfos::new()
     ) ;
 
     /// Set of selectors.
@@ -882,7 +927,7 @@ pub fn get(dtyp: &str) -> Res<DTyp> {
 }
 
 /// All the datatypes.
-pub fn get_all() -> impl ::std::ops::Deref<Target = BTreeMap<String, DTyp>> {
+pub fn get_all() -> impl ::std::ops::Deref<Target = DTypInfos> {
     factory.read().expect("failed to access datatype factory")
 }
 
