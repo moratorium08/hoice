@@ -545,6 +545,7 @@ impl<'a> LearnCtx<'a> {
         template_info: &TemplateInfo,
     ) -> Res<Option<Model>> {
         self.solver.reset()?;
+        self.solver.set_option(":timeout", "4294967295")?;
         template_info.define_parameters(&mut self.solver)?;
         template_info.define_constraints(&mut self.solver)?;
 
