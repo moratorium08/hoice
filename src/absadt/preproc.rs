@@ -105,18 +105,18 @@ fn find_other_selectors<'a>(dty: &'a DTyp, selector: &str) -> Res<(&'a String, &
 fn remove_slc_tst_inner(
     t: &Term,
     varinfos: &mut VarInfos,
-    additional_constrs: &mut Vec<Term>,
+    cache: &mut HashMap<Term, Vec<(VarIdx, Typ)>>,
 ) -> Term {
     match t.get() {
         RTerm::Var(_, _) | RTerm::Cst(_) => t.clone(),
         RTerm::CArray { typ, term, .. } => {
-            let term = remove_slc_tst_inner(term, varinfos, additional_constrs);
+            let term = remove_slc_tst_inner(term, varinfos, cache);
             term::cst_array(typ.clone(), term)
         }
         RTerm::App { op, args, .. } => {
             let args = args
                 .iter()
-                .map(|t| remove_slc_tst_inner(t, varinfos, additional_constrs))
+                .map(|t| remove_slc_tst_inner(t, varinfos, cache))
                 .collect();
             term::app(op.clone(), args)
         }
@@ -125,16 +125,23 @@ fn remove_slc_tst_inner(
         } => {
             let args = args
                 .iter()
-                .map(|t| remove_slc_tst_inner(t, varinfos, additional_constrs))
+                .map(|t| remove_slc_tst_inner(t, varinfos, cache))
                 .collect();
             term::dtyp_new(typ.clone(), name, args)
         }
         RTerm::DTypSlc { name, term, .. } => {
-            let term = remove_slc_tst_inner(term, varinfos, additional_constrs);
-            let term_typ = term.typ();
-            let (dty, prms) = term_typ.dtyp_inspect().unwrap();
+            let term = remove_slc_tst_inner(term, varinfos, cache);
             let (constructor_name, slcs) = find_other_selectors(dty, name).unwrap();
-            let args = slcs_to_args(prms, slcs, varinfos);
+            let args = match cache.get(&term) {
+                Some(args) => args,
+                None => {
+                    let term_typ = term.typ();
+                    let (dty, prms) = term_typ.dtyp_inspect().unwrap();
+                    let args = slcs_to_args(prms, slcs, varinfos);
+                    cache.insert(term.clone(), args);
+                    cache.get(&term).unwrap()
+                }
+            };
 
             let idx = slcs
                 .iter()
@@ -143,14 +150,10 @@ fn remove_slc_tst_inner(
                 .unwrap();
             let target_arg = args[idx].clone();
 
-            let args = args.into_iter().map(|(v, t)| term::var(v, t)).collect();
-            let lhs = term::dtyp_new(term.typ(), constructor_name, args);
-            let eq = term::eq(lhs.clone(), term.clone());
-            additional_constrs.push(eq);
             term::var(target_arg.0, target_arg.1)
         }
         RTerm::DTypTst { name, term, .. } => {
-            let term = remove_slc_tst_inner(term, varinfos, additional_constrs);
+            let term = remove_slc_tst_inner(term, varinfos, cache);
             let term_typ = term.typ();
             let (ty, prms) = term_typ.dtyp_inspect().unwrap();
             let slcs = ty.selectors_of(name).unwrap();
@@ -165,7 +168,7 @@ fn remove_slc_tst_inner(
         RTerm::Fun { name, args, .. } => {
             let args = args
                 .iter()
-                .map(|t| remove_slc_tst_inner(t, varinfos, additional_constrs))
+                .map(|t| remove_slc_tst_inner(t, varinfos, cache))
                 .collect();
             term::fun(name.clone(), args)
         }
@@ -174,16 +177,26 @@ fn remove_slc_tst_inner(
 
 fn remove_slc_tst(c: &mut AbsClause) {
     let mut constrs = Vec::new();
-    let t = remove_slc_tst_inner(&c.lhs_term, &mut c.vars, &mut constrs);
+
+    let mut cache = HashMap::new();
+    let t = remove_slc_tst_inner(&c.lhs_term, &mut c.vars, &mut cache);
     for p in c.lhs_preds.iter_mut() {
         let args: Vec<_> = p
             .args
             .iter()
-            .map(|t| remove_slc_tst_inner(t, &mut c.vars, &mut constrs))
+            .map(|t| remove_slc_tst_inner(t, &mut c.vars, &mut cache))
             .collect();
         let args: VarMap<_> = args.into();
         p.args = args.into();
     }
+    let constrs = cache
+        .into_iter()
+        .map(|(_, args)| {
+            let args = args.into_iter().map(|(v, t)| term::var(v, t)).collect();
+            let lhs = term::dtyp_new(term.typ(), constructor_name, args);
+            term::eq(lhs.clone(), term.clone())
+        })
+        .collect();
     constrs.push(t);
     c.lhs_term = term::and(constrs);
 }
@@ -252,7 +265,7 @@ fn test_remove_slc_tst() {
         match t.get() {
             RTerm::Var(_, _) | RTerm::Cst(_) => {}
             RTerm::CArray { term, .. } => check_no_slc_tst(term),
-            RTerm::App { op, args, .. } => {
+            RTerm::App { args, .. } => {
                 for arg in args.iter() {
                     check_no_slc_tst(arg);
                 }
