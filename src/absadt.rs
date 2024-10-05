@@ -185,6 +185,8 @@ impl<'original> AbsConf<'original> {
     fn run(&mut self) -> Res<either::Either<(), ()>> {
         //self.playground()?;
         self.initialize_encs()?;
+        let mut file = self.instance.instance_log_files("preprocessed")?;
+        self.instance.dump_as_smt2(&mut file, "", false)?;
         let r = loop {
             self.epoch += 1;
             log_info!("epoch: {}", self.epoch);

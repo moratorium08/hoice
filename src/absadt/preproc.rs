@@ -83,7 +83,7 @@ fn slcs_to_args(
     for (_, sel_ty) in slcs.iter() {
         let new_var = varinfos.next_index();
         let sel_ty = sel_ty.to_type(Some(prms)).unwrap();
-        let new_var_info = VarInfo::new("tmp", sel_ty.clone(), new_var);
+        let new_var_info = VarInfo::new(format!("tmp_{}", new_var), sel_ty.clone(), new_var);
         varinfos.push(new_var_info);
         args.push((new_var, sel_ty));
     }

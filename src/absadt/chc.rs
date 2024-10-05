@@ -415,6 +415,48 @@ impl<'a> AbsInstance<'a> {
         Ok(file)
     }
 
+    fn dump_dtype_if_needed<File>(&self, w: &mut File) -> Res<()>
+    where
+        File: Write,
+    {
+        fn check(t: &Term) -> bool {
+            match t.get() {
+                RTerm::Var(typ, _) => typ.is_dtyp(),
+                RTerm::Cst(v) => v.typ().is_dtyp(),
+                RTerm::CArray { typ, term, .. }
+                | RTerm::DTypSlc { typ, term, .. }
+                | RTerm::DTypTst { typ, term, .. } => typ.is_dtyp() || check(term),
+                RTerm::App { typ, args, .. }
+                | RTerm::DTypNew { typ, args, .. }
+                | RTerm::Fun { typ, args, .. } => {
+                    typ.is_dtyp() || args.iter().any(|arg| check(arg))
+                }
+            }
+        }
+        let mut flag = false;
+        for clause in &self.clauses {
+            if check(&clause.lhs_term) {
+                flag = true;
+                break;
+            }
+            for pred in &clause.lhs_preds {
+                for arg in pred.args.iter() {
+                    if check(arg) {
+                        flag = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if flag {
+            writeln!(w, "; Datatypes")?;
+            dtyp::write_all(w, "")?;
+            dtyp::write_constructor_map(w, "; ")?;
+            writeln!(w)?;
+        }
+        Ok(())
+    }
+
     pub fn dump_as_smt2_with_fun<File, Blah, F>(
         &self,
         w: &mut File,
@@ -438,12 +480,7 @@ impl<'a> AbsInstance<'a> {
         gen_additional(w)?;
         writeln!(w)?;
 
-        // writeln!(w, "; Datatypes")?;
-
-        // dtyp::write_all(w, "")?;
-
-        dtyp::write_constructor_map(w, "; ")?;
-        writeln!(w)?;
+        self.dump_dtype_if_needed(w)?;
 
         writeln!(w, "; Functions")?;
         fun::write_all(w, "", true)?;
