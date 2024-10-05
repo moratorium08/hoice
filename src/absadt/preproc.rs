@@ -105,7 +105,7 @@ fn find_other_selectors<'a>(dty: &'a DTyp, selector: &str) -> Res<(&'a String, &
 fn remove_slc_tst_inner(
     t: &Term,
     varinfos: &mut VarInfos,
-    cache: &mut HashMap<Term, Vec<(VarIdx, Typ)>>,
+    cache: &mut HashMap<Term, (String, Vec<(VarIdx, Typ)>)>,
 ) -> Term {
     match t.get() {
         RTerm::Var(_, _) | RTerm::Cst(_) => t.clone(),
@@ -131,14 +131,14 @@ fn remove_slc_tst_inner(
         }
         RTerm::DTypSlc { name, term, .. } => {
             let term = remove_slc_tst_inner(term, varinfos, cache);
+            let term_typ = term.typ();
+            let (dty, prms) = term_typ.dtyp_inspect().unwrap();
             let (constructor_name, slcs) = find_other_selectors(dty, name).unwrap();
             let args = match cache.get(&term) {
                 Some(args) => args,
                 None => {
-                    let term_typ = term.typ();
-                    let (dty, prms) = term_typ.dtyp_inspect().unwrap();
                     let args = slcs_to_args(prms, slcs, varinfos);
-                    cache.insert(term.clone(), args);
+                    cache.insert(term.clone(), (constructor_name.clone(), args));
                     cache.get(&term).unwrap()
                 }
             };
@@ -148,7 +148,7 @@ fn remove_slc_tst_inner(
                 .enumerate()
                 .find_map(|(idx, (sel, _))| if sel == name { Some(idx) } else { None })
                 .unwrap();
-            let target_arg = args[idx].clone();
+            let target_arg = args.1[idx].clone();
 
             term::var(target_arg.0, target_arg.1)
         }
@@ -176,8 +176,6 @@ fn remove_slc_tst_inner(
 }
 
 fn remove_slc_tst(c: &mut AbsClause) {
-    let mut constrs = Vec::new();
-
     let mut cache = HashMap::new();
     let t = remove_slc_tst_inner(&c.lhs_term, &mut c.vars, &mut cache);
     for p in c.lhs_preds.iter_mut() {
@@ -189,9 +187,9 @@ fn remove_slc_tst(c: &mut AbsClause) {
         let args: VarMap<_> = args.into();
         p.args = args.into();
     }
-    let constrs = cache
+    let mut constrs: Vec<_> = cache
         .into_iter()
-        .map(|(_, args)| {
+        .map(|(term, (constructor_name, args))| {
             let args = args.into_iter().map(|(v, t)| term::var(v, t)).collect();
             let lhs = term::dtyp_new(term.typ(), constructor_name, args);
             term::eq(lhs.clone(), term.clone())
