@@ -229,7 +229,11 @@ impl<'original> AbsConf<'original> {
 }
 
 impl<'a> AbsConf<'a> {
-    pub fn encode_clause(&self, c: &chc::AbsClause) -> chc::AbsClause {
+    pub fn encode_clause(
+        &self,
+        c: &chc::AbsClause,
+        enc_map: &BTreeMap<Typ, Vec<PrdIdx>>,
+    ) -> chc::AbsClause {
         let ctx = enc::EncodeCtx::new(&self.encs);
         let (new_vars, introduced) = enc::tr_varinfos(&self.encs, &c.vars);
         let encode_var = |_, var| {
@@ -268,6 +272,25 @@ impl<'a> AbsConf<'a> {
             }
             (*pred, new_args)
         });
+
+        // add enc_pred condition
+        for info in c.vars.iter() {
+            if !info.typ.is_dtyp() {
+                continue;
+            }
+            let approx_vars = introduced.get(&info.idx).unwrap();
+            let enc_preds = enc_map.get(&info.typ).unwrap();
+            assert_eq!(approx_vars.len(), enc_preds.len());
+            for (approx_var, enc_pred) in approx_vars.iter().zip(enc_preds.iter()) {
+                let args: VarMap<_> = vec![term::var(approx_var.idx, typ::int())].into();
+                let app = chc::PredApp {
+                    pred: *enc_pred,
+                    args: args.into(),
+                };
+                lhs_preds.push(app);
+            }
+        }
+
         let res = chc::AbsClause {
             vars: new_vars,
             lhs_term,
@@ -356,7 +379,7 @@ impl<'a> AbsConf<'a> {
         &self,
         preds: &mut PrdMap<Pred>,
         clauses: &mut Vec<chc::AbsClause>,
-    ) -> Vec<Pred> {
+    ) -> BTreeMap<Typ, Vec<PrdIdx>> {
         let mut enc_map = BTreeMap::new();
         // prepare preds
         for (typ, enc) in self.encs.iter() {
@@ -364,7 +387,11 @@ impl<'a> AbsConf<'a> {
             for i in 0..enc.n_params {
                 let pi = preds.next_index();
                 ps.push(pi);
-                let p = Pred::new(format!("P_{}_{}", typ, i), pi, vec![typ::int()].into());
+                let p = Pred::new(
+                    format!("encoder_pred_{}_{}", typ, i),
+                    pi,
+                    vec![typ::int()].into(),
+                );
                 preds.push(p);
             }
             enc_map.insert(typ.clone(), ps);
@@ -389,23 +416,30 @@ impl<'a> AbsConf<'a> {
                 }
             }
         }
-
-        unimplemented!()
+        enc_map
     }
     pub fn encode(&self) -> chc::AbsInstance {
-        let mut clauses = self
-            .instance
-            .clauses
-            .iter()
-            .map(|c| self.encode_clause(c))
-            .collect();
         let mut preds = self
             .instance
             .preds
             .iter()
             .map(|p| self.encode_pred(p))
             .collect();
-        self.encoder_preds(&mut preds, &mut clauses);
+        let mut clauses = Vec::new();
+        let enc_map = self.encoder_preds(&mut preds, &mut clauses);
+        println!("preds:");
+        for p in preds.iter() {
+            println!("{}", p);
+        }
+
+        let clauses2: Vec<_> = self
+            .instance
+            .clauses
+            .iter()
+            .map(|c| self.encode_clause(c, &enc_map))
+            .collect();
+        clauses.extend(clauses2);
+
         self.instance.clone_with_clauses(clauses, preds)
     }
 }
