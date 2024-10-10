@@ -37,12 +37,9 @@
 //! ## Some Assumptions
 //! - set of ADT does not change from start to end during `work`
 //!   - they are defined as the global hashconsed objects
-use std::vec;
-
 use chc::AbsInstance;
 use enc::Encoder;
 
-use crate::absadt::hyper_res::V;
 use crate::common::{smt::FullParser as Parser, *};
 use crate::info::{Pred, VarInfo};
 
