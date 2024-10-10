@@ -836,7 +836,6 @@ impl<'a> AbsInstance<'a> {
         ) -> term::Term {
             let clause = &instance.clauses[cur.clsidx];
             let mut args_remap = HashMap::new();
-            assert_eq!(clause.lhs_preds.len(), cur.children.len());
 
             // Introduce fresh variables and rename variables
             let mut rename_map = VarHMap::new();
@@ -858,8 +857,13 @@ impl<'a> AbsInstance<'a> {
             for child_idx in cur.children.iter() {
                 let next_node = tree.nodes.get(child_idx).unwrap();
 
-                let predidx = next_node.args[0].as_i64().unwrap() as usize;
-                let app = &clause.lhs_preds[predidx];
+                let original_arg_pos = next_node.args[0].as_i64().unwrap() as usize;
+                // This predicate application is just for the constraint of the reachable
+                // values for each approximation
+                if clause.lhs_preds.len() <= original_arg_pos {
+                    continue;
+                }
+                let app = &clause.lhs_preds[original_arg_pos];
 
                 let args = app
                     .args
@@ -871,6 +875,7 @@ impl<'a> AbsInstance<'a> {
 
                 terms.push(res);
             }
+            assert_eq!(clause.lhs_preds.len() + 1, terms.len());
             let res = term::and(terms);
 
             match clause.rhs.as_ref() {

@@ -425,19 +425,18 @@ impl<'a> AbsConf<'a> {
             .iter()
             .map(|p| self.encode_pred(p))
             .collect();
-        let mut clauses = Vec::new();
-        let enc_map = self.encoder_preds(&mut preds, &mut clauses);
-        println!("preds:");
-        for p in preds.iter() {
-            println!("{}", p);
-        }
+        let mut clauses2 = Vec::new();
 
-        let clauses2: Vec<_> = self
+        let enc_map = self.encoder_preds(&mut preds, &mut clauses2);
+
+        let mut clauses: Vec<_> = self
             .instance
             .clauses
             .iter()
             .map(|c| self.encode_clause(c, &enc_map))
             .collect();
+        // the order of clauses matters
+        // now, it must be the original clauses first, and then the encoder clauses
         clauses.extend(clauses2);
 
         self.instance.clone_with_clauses(clauses, preds)
