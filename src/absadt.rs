@@ -350,12 +350,13 @@ impl<'a> AbsConf<'a> {
                     assert!(!ty.is_dtyp());
                     // nop since the variable should be int or something,
                     // which is not approximated
+                    idx.inc();
                 }
             }
         }
         // constraint on the result
         let res_var = VarInfo::new("res", typ::int(), idx);
-        let lhs_term = term::eq(term::var(res_var.idx, res_var.typ.clone()), t.clone());
+        let lhs_term = term::adteq(term::var(res_var.idx, res_var.typ.clone()), t.clone());
 
         // head
         let head_args = vec![res_var.idx];

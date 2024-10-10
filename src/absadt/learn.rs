@@ -76,9 +76,11 @@ impl TemplateInfo {
                     .sum();
                 // insert dummy variables for newly-introduced approximated integers
                 for _ in 0..(n_args - approx.args.len()) {
-                    approx
-                        .args
-                        .push(VarInfo::new("tmp", typ::int(), approx.args.next_index()));
+                    approx.args.push(VarInfo::new(
+                        format!("tmp-{}", approx.args.next_index()),
+                        typ::int(),
+                        approx.args.next_index(),
+                    ));
                 }
                 approxs.insert(
                     constr.to_string(),
@@ -168,11 +170,19 @@ impl Approx {
             match cur_enc.get(&t) {
                 Some(_) => {
                     for _ in 0..n_encs {
-                        new_args.push(VarInfo::new("tmp", typ::int(), new_args.next_index()));
+                        new_args.push(VarInfo::new(
+                            format!("tmp-{}", new_args.next_index()),
+                            typ::int(),
+                            new_args.next_index(),
+                        ));
                     }
                 }
                 None => {
-                    new_args.push(VarInfo::new("tmp", t.clone(), new_args.next_index()));
+                    new_args.push(VarInfo::new(
+                        format!("tmp-{}", new_args.next_index()),
+                        t.clone(),
+                        new_args.next_index(),
+                    ));
                 }
             }
         }
