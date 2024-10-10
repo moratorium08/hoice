@@ -502,8 +502,8 @@ impl<'a> AbsInstance<'a> {
         // writeln!(w)?;
         // writeln!(w)?;
 
-        for (pred_idx, pred) in self.preds.index_iter() {
-            if !self.original[pred_idx].is_defined() {
+        for pred in self.preds.iter() {
+            if !pred.is_defined() {
                 write!(w, "({}\n  {}\n  (", keywords::cmd::dec_fun, pred.name)?;
                 // All predicates take another argument for handling callee
                 // positions
@@ -542,7 +542,7 @@ impl<'a> AbsInstance<'a> {
                     if !args.is_empty() {
                         write!(w, "(")?
                     }
-                    w.write_all(self.original[p].name.as_bytes())?;
+                    w.write_all(self.preds[p].name.as_bytes())?;
                     if encode_tag {
                         match fst {
                             either::Left(()) => write!(w, " {IDX_ARG}")?,
