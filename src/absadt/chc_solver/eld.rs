@@ -37,11 +37,11 @@ impl Eldarica {
 }
 
 impl Eldarica {
-    fn dump_instance<I>(&mut self, instance: &I) -> Res<()>
+    fn dump_instance<I>(&mut self, instance: &I, encode_tag: bool) -> Res<()>
     where
         I: InstanceT,
     {
-        instance.dump_as_smt2(&mut self.stdin, "")?;
+        instance.dump_as_smt2_with_encode_tag(&mut self.stdin, "", encode_tag)?;
         Ok(())
     }
 
@@ -78,11 +78,11 @@ impl Eldarica {
     }
 }
 
-pub fn run_eldarica<I>(instance: &I, timeout: Option<usize>) -> Res<bool>
+pub fn run_eldarica<I>(instance: &I, timeout: Option<usize>, encode_tag: bool) -> Res<bool>
 where
     I: InstanceT,
 {
     let mut eld = Eldarica::new(timeout)?;
-    eld.dump_instance(instance)?;
+    eld.dump_instance(instance, encode_tag)?;
     eld.check_sat()
 }

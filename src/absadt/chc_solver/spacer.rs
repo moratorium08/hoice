@@ -62,12 +62,12 @@ impl CHCSolver for Spacer {
         Ok(())
     }
 
-    fn dump_instance<I>(&mut self, instance: &I) -> Res<()>
+    fn dump_instance_with_encode_tag<I>(&mut self, instance: &I, encode_tag: bool) -> Res<()>
     where
         I: InstanceT,
     {
         let options = "(set-option :produce-proofs true)\n(set-option :pp.pretty_proof true)\n(set-option :produce-unsat-cores true)";
-        instance.dump_as_smt2(&mut self.stdin, options)?;
+        instance.dump_as_smt2_with_encode_tag(&mut self.stdin, options, encode_tag)?;
         Ok(())
     }
     fn check_sat(&mut self) -> Res<bool> {

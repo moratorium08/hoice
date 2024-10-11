@@ -738,12 +738,17 @@ pub fn decode_tag(res: ResolutionProof) -> Res<CallTree> {
 }
 
 impl super::chc_solver::Instance for AbsInstance<'_> {
-    fn dump_as_smt2<File, Option>(&self, w: &mut File, options: Option) -> Res<()>
+    fn dump_as_smt2_with_encode_tag<File, Option>(
+        &self,
+        w: &mut File,
+        options: Option,
+        encode_tag: bool,
+    ) -> Res<()>
     where
         File: Write,
         Option: AsRef<str>,
     {
-        self.dump_as_smt2_with_option(w, "", options, true)
+        self.dump_as_smt2_with_option(w, "", options, encode_tag)
     }
 }
 

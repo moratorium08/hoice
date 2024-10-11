@@ -45,11 +45,11 @@ impl Hoice {
 }
 
 impl CHCSolver for Hoice {
-    fn dump_instance<I>(&mut self, instance: &I) -> Res<()>
+    fn dump_instance_with_encode_tag<I>(&mut self, instance: &I, encode_tag: bool) -> Res<()>
     where
         I: InstanceT,
     {
-        instance.dump_as_smt2(&mut self.stdin, "")?;
+        instance.dump_as_smt2_with_encode_tag(&mut self.stdin, "", encode_tag)?;
         Ok(())
     }
 
@@ -75,11 +75,11 @@ impl CHCSolver for Hoice {
     }
 }
 
-pub fn run_hoice<I>(instance: &I, timeout: Option<usize>) -> Res<bool>
+pub fn run_hoice<I>(instance: &I, timeout: Option<usize>, encode_tag: bool) -> Res<bool>
 where
     I: InstanceT,
 {
     let mut hoice = Hoice::new(timeout)?;
-    hoice.dump_instance(instance)?;
+    hoice.dump_instance_with_encode_tag(instance, encode_tag)?;
     hoice.check_sat()
 }
