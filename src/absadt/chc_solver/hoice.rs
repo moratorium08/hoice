@@ -55,7 +55,7 @@ impl CHCSolver for Hoice {
 
     fn check_sat(&mut self) -> Res<bool> {
         let mut line = String::new();
-        self.stdout.read_line(&mut line)?;
+        self.stdout.read_to_string(&mut line)?;
         if line.starts_with("sat") {
             Ok(true)
         } else if line.starts_with("unsat") {

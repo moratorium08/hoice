@@ -925,7 +925,7 @@ impl<'a> AbsInstance<'a> {
         // since eld seems better, we first try eld with timeout
         let b = super::chc_solver::portfolio(self)
             .map(|x| x.is_left())
-            .map_err(|e| println!("{}", e))
+            .map_err(|e| log_info!("Portfolio solver failed with {}", e))
             .unwrap_or(false);
         if b {
             return Ok(either::Left(()));

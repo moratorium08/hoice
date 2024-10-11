@@ -59,13 +59,14 @@ impl Eldarica {
             stdin.discard();
 
             let mut line = String::new();
-            stdout.read_line(&mut line)?;
+            stdout.read_to_string(&mut line)?;
             Ok(line)
         }
 
         let res = inner(stdin, stdout);
         // kill child proess before returning
         child.kill().unwrap();
+
         let line = res?;
 
         if line.starts_with("sat") {
