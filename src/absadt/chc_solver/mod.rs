@@ -38,7 +38,7 @@ pub trait CHCSolver {
     where
         I: Instance;
 
-    fn check_sat(&mut self) -> Res<bool>;
+    fn check_sat(self) -> Res<bool>;
 }
 
 pub fn portfolio<I>(instance: &I) -> Res<either::Either<(), hyper_res::ResolutionProof>>

@@ -13,13 +13,6 @@ pub struct Hoice {
 
 const OPTION: [&str; 0] = [];
 
-impl Drop for Hoice {
-    fn drop(&mut self) {
-        writeln!(&mut self.stdin, "(exit)").discard();
-        self.child.kill().unwrap();
-    }
-}
-
 impl Hoice {
     fn new(timeout: Option<usize>) -> Res<Self> {
         let mut args = OPTION.iter().map(|s| Cow::from(*s)).collect::<Vec<_>>();
@@ -53,9 +46,14 @@ impl CHCSolver for Hoice {
         Ok(())
     }
 
-    fn check_sat(&mut self) -> Res<bool> {
+    fn check_sat(mut self) -> Res<bool> {
         let mut line = String::new();
+        writeln!(&mut self.stdin, "(exit)").discard();
+
         self.stdout.read_to_string(&mut line)?;
+
+        self.child.kill().unwrap();
+
         if line.starts_with("sat") {
             Ok(true)
         } else if line.starts_with("unsat") {

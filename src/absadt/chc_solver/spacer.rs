@@ -4,7 +4,7 @@
 //! unsat-core. This module is intended to be temporary; we should move the
 //! functionality to rsmt2 or some other place.
 
-use super::{Instance as InstanceT, *};
+use super::Instance as InstanceT;
 use crate::absadt::hyper_res;
 use crate::common::*;
 use std::io::{BufRead, BufReader};
@@ -52,7 +52,7 @@ impl Drop for Spacer {
     }
 }
 
-impl CHCSolver for Spacer {
+impl Spacer {
     fn write_all<S>(&mut self, s: S) -> Res<()>
     where
         S: AsRef<[u8]>,
@@ -62,7 +62,7 @@ impl CHCSolver for Spacer {
         Ok(())
     }
 
-    fn dump_instance_with_encode_tag<I>(&mut self, instance: &I, encode_tag: bool) -> Res<()>
+    fn dump_instance<I>(&mut self, instance: &I, encode_tag: bool) -> Res<()>
     where
         I: InstanceT,
     {
@@ -139,7 +139,7 @@ where
     I: InstanceT,
 {
     let mut spacer = Spacer::new()?;
-    spacer.dump_instance(instance)?;
+    spacer.dump_instance(instance, true)?;
 
     let is_sat = spacer.check_sat()?;
 
