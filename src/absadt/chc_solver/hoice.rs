@@ -1,0 +1,85 @@
+use super::CHCSolver;
+use super::Instance as InstanceT;
+use crate::common::*;
+use std::borrow::Cow;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
+
+pub struct Hoice {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    stdout: BufReader<std::process::ChildStdout>,
+}
+
+const OPTION: [&str; 0] = [];
+
+impl Drop for Hoice {
+    fn drop(&mut self) {
+        writeln!(&mut self.stdin, "(exit)").unwrap();
+        self.child.kill().unwrap();
+    }
+}
+
+impl Hoice {
+    fn new(timeout: Option<usize>) -> Res<Self> {
+        let mut args = OPTION.iter().map(|s| Cow::from(*s)).collect::<Vec<_>>();
+        if let Some(timeout) = timeout {
+            args.push(Cow::from("--timeout"));
+            args.push(Cow::from(timeout.to_string()));
+        }
+
+        let mut child = Command::new("hoice")
+            .args(args.iter().map(|s| s.as_ref()))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()?;
+        let stdin = child.stdin.take().expect("no stdin");
+        let stdout = child.stdout.take().expect("no stdout");
+        let stdout = BufReader::new(stdout);
+        Ok(Self {
+            child,
+            stdin,
+            stdout,
+        })
+    }
+}
+
+impl CHCSolver for Hoice {
+    fn dump_instance<I>(&mut self, instance: &I) -> Res<()>
+    where
+        I: InstanceT,
+    {
+        instance.dump_as_smt2(&mut self.stdin, "")?;
+        Ok(())
+    }
+
+    fn check_sat(&mut self) -> Res<bool> {
+        let mut line = String::new();
+        self.stdout.read_line(&mut line)?;
+        if line.starts_with("sat") {
+            Ok(true)
+        } else if line.starts_with("unsat") {
+            Ok(false)
+        } else {
+            bail!("Unexpected output: {}", line)
+        }
+    }
+
+    fn write_all<S>(&mut self, s: S) -> Res<()>
+    where
+        S: AsRef<[u8]>,
+    {
+        let s = s.as_ref();
+        self.stdin.write_all(s)?;
+        Ok(())
+    }
+}
+
+pub fn run_hoice<I>(instance: &I, timeout: Option<usize>) -> Res<bool>
+where
+    I: InstanceT,
+{
+    let mut hoice = Hoice::new(timeout)?;
+    hoice.dump_instance(instance)?;
+    hoice.check_sat()
+}

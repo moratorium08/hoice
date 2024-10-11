@@ -386,7 +386,11 @@ impl<'a> AbsConf<'a> {
                 let pi = preds.next_index();
                 ps.push(pi);
                 let p = Pred::new(
-                    format!("encoder_pred_{}_{}", typ, i),
+                    format!(
+                        "encoder_pred_{}_{}",
+                        enc::to_valid_symbol(typ.to_string()),
+                        i
+                    ),
                     pi,
                     vec![typ::int()].into(),
                 );

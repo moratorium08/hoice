@@ -22,7 +22,6 @@ use hyper_res::ResolutionProof;
 use std::path::PathBuf;
 
 const CHECK_SAT_TIMEOUT: usize = 10;
-const CHECK_CHC_TIMEOUT: usize = 100;
 
 pub struct PredApp {
     pub pred: PrdIdx,
@@ -919,7 +918,8 @@ impl<'a> AbsInstance<'a> {
     /// Returns () when it' sat, and a counterexample when it's unsat
     pub fn check_sat(&self) -> Res<either::Either<(), CallTree>> {
         // since eld seems better, we first try eld with timeout
-        let b = super::chc_solver::run_eldarica(self, Some(CHECK_CHC_TIMEOUT))
+        let b = super::chc_solver::portfolio(self)
+            .map(|x| x.is_left())
             .map_err(|e| println!("{}", e))
             .unwrap_or(false);
         if b {

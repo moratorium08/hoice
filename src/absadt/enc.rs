@@ -13,7 +13,7 @@ pub struct Approx {
 
 impl fmt::Display for Approx {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "λ")?;
+        write!(f, "\\")?;
         let mut args = self.args.iter();
         if let Some(arg) = args.next() {
             write!(f, "v_{}: {}", arg.idx, arg.typ)?;
@@ -126,18 +126,26 @@ impl<Approx: std::fmt::Display> std::fmt::Display for Enc<Approx> {
     }
 }
 
+pub fn to_valid_symbol<S>(s: S) -> String
+where
+    S: AsRef<str>,
+{
+    let s = s.as_ref();
+    let mut new_type = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c.is_alphanumeric() {
+            new_type.push(c);
+        }
+    }
+    format!("{}-{}", ENC_TAG, new_type)
+}
+
 pub type Encoder = Enc<Approx>;
 
 impl<A: Approximation> Enc<A> {
     fn generate_fun_name(&self) -> String {
         let s = self.typ.to_string();
-        let mut new_type = String::with_capacity(s.capacity());
-        for c in s.chars() {
-            if c.is_alphanumeric() {
-                new_type.push(c);
-            }
-        }
-        format!("{}-{}", ENC_TAG, new_type)
+        to_valid_symbol(s)
     }
     pub fn push_approx_typs(&self, varmap: &mut VarMap<Typ>) {
         for _ in 0..self.n_params {
