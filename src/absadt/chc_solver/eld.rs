@@ -1,7 +1,7 @@
 use super::Instance as InstanceT;
 use crate::common::*;
 use std::borrow::Cow;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::process::{Command, Stdio};
 
 pub struct Eldarica {
@@ -41,7 +41,7 @@ impl Eldarica {
     where
         I: InstanceT,
     {
-        instance.dump_as_smt2_with_encode_tag(&mut self.stdin, "", encode_tag)?;
+        instance.dump_as_smt2(&mut self.stdin, "", encode_tag)?;
         Ok(())
     }
 

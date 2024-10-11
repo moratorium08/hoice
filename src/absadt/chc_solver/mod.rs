@@ -11,7 +11,7 @@ pub use spacer::run_spacer;
 const CHECK_CHC_TIMEOUT: usize = 60;
 
 pub trait Instance {
-    fn dump_as_smt2_with_encode_tag<File, Option>(
+    fn dump_as_smt2<File, Option>(
         &self,
         w: &mut File,
         options: Option,
@@ -20,14 +20,6 @@ pub trait Instance {
     where
         File: Write,
         Option: AsRef<str>;
-
-    fn dump_as_smt2<W, Options>(&self, w: &mut W, prefix: Options) -> Res<()>
-    where
-        W: std::io::Write,
-        Options: AsRef<str>,
-    {
-        self.dump_as_smt2_with_encode_tag(w, prefix, true)
-    }
 }
 
 pub trait CHCSolver {
