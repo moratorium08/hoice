@@ -841,6 +841,87 @@ fn inline_adts<'a>(instance: &mut AbsInstance<'a>) {
     }
 }
 
+/// Monomorphization: replace all the polymorphic predicates with concrete types
+///
+/// 1. collect all the types
+/// 2. define a new predicate for each type
+/// 3. replace all the polymorphic predicates with the new predicates
+struct Monomorphization<'a, 'b> {
+    instance: &'a mut AbsInstance<'b>,
+}
+
+impl<'a, 'b> Monomorphization<'a, 'b> {
+    fn new(instance: &'a mut AbsInstance<'b>) -> Self {
+        Self { instance }
+    }
+
+    fn work_type(&self, ty: &Typ, map: &mut HashSet<(DTyp, dtyp::TPrmMap<Typ>)>) {
+        match ty.get() {
+            typ::RTyp::Unk | typ::RTyp::Int | typ::RTyp::Real | typ::RTyp::Bool => (),
+            typ::RTyp::Array { src, tgt } => {
+                self.work_type(src, map);
+                self.work_type(tgt, map);
+            }
+            typ::RTyp::DTyp { dtyp, prms } => {
+                map.insert((dtyp.clone(), prms.clone()));
+                for (_, ts) in dtyp.news.iter() {
+                    for t in ts.iter() {
+                        self.work_type(t, map);
+                    }
+                }
+            }
+        }
+    }
+
+    fn collect_all_types(&self) -> HashSet<Typ> {
+        let mut types = HashSet::new();
+        for c in self.instance.clauses.iter() {
+            for v in c.vars.iter() {
+                self.work_type(&v.typ, &mut types);
+            }
+        }
+        types
+    }
+
+    fn define_mono_type(&mut self, ty: &Typ) {
+        unimplemented!()
+    }
+
+    // fn work_on_clause(&self, c: &AbsClause) -> AbsClause {
+    //     unimplemented!()
+    // }
+
+    fn work(&mut self) {
+        let types = self.collect_all_types();
+        dtyp::reset().unwrap();
+        for ty in types.iter() {
+            self.define_mono_type(ty);
+        }
+        // let mut clauses = Vec::new();
+        // for c in self.instance.clauses.iter() {
+        //     clauses.push(self.work_on_clause(c));
+        // }
+        // let mut preds = PrdMap::new();
+        // for p in self.instance.preds.iter() {
+        //     let mut new_sig = VarMap::new();
+        //     for s in p.sig.iter() {
+        //         if types.contains(s) {
+        //             new_sig.push(s.clone());
+        //         }
+        //     }
+        //     let p = crate::info::Pred::new(p.name.clone(), p.idx, new_sig);
+        //     preds.push(p);
+        // }
+        // self.instance.clauses = clauses;
+        // self.instance.preds = preds;
+    }
+}
+
+fn monomorphization<'a>(instance: &mut AbsInstance<'a>) {
+    let mut mono = Monomorphization::new(instance);
+    mono.work();
+}
+
 pub fn work<'a>(instance: &mut AbsInstance<'a>) {
     remove_neg_src_tst(instance);
     let mut file = instance.instance_log_files("remove_neg_src").unwrap();

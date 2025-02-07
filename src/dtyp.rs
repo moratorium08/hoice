@@ -1444,3 +1444,13 @@ fn dtyp_write_dec() {
         "
     )
 }
+
+/// Removes all datatypes.
+pub fn reset() -> Res<()> {
+    if let Ok(mut f) = factory.write() {
+        *f = DTypInfos::new();
+    } else {
+        bail!("failed to access datatype factory")
+    }
+    Ok(())
+}
