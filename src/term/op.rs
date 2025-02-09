@@ -39,6 +39,17 @@ pub enum Op {
     Eql,
     /// Specialized Eql used in absadt
     /// For the purpose of avoiding optimizations
+    ///
+    /// AdtEql is essential for counterexample generation and refinement in Catalia.
+    /// In Catalia, spurious counterexamples such as `S(x) = Z` may be generated.
+    /// This occurs because, under certain approximations (see Section 3.2 of the paper for details),
+    /// expressions like `S(x) = Z` can be mapped to `0 = 0`, where the formula is false before
+    /// approximation but becomes trivially true after approximation.
+    ///
+    /// The key issue is that if standard equality optimizations are applied before approximation,
+    /// such formulas may be reduced to trivially false, losing the structural information of the ADT.
+    /// To ensure Catalia operates correctly, equality involving ADTs must remain unaffected by optimizations.
+    /// To precisely handle this, a specialized constructor for ADT equality is introduced.
     AdtEql,
     /// Negation.
     Not,
