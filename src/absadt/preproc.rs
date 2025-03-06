@@ -1011,10 +1011,21 @@ impl<'a, 'b> Monomorphization<'a, 'b> {
     }
 }
 
+// TODO: implement monomorphization
+// Should be implemented for general purpose, but for now there is no time to complete
 #[allow(dead_code)]
 fn monomorphization<'a>(instance: &mut AbsInstance<'a>) {
     let mut mono = Monomorphization::new(instance);
     mono.work();
+}
+
+fn check_no_polymorphic_type(instance: &mut AbsInstance) -> bool {
+    for (_, d) in dtyp::get_all().iter() {
+        if d.prms.len() > 0 {
+            return false;
+        }
+    }
+    true
 }
 
 pub fn work<'a>(instance: &mut AbsInstance<'a>) {
@@ -1030,5 +1041,8 @@ pub fn work<'a>(instance: &mut AbsInstance<'a>) {
     //let mut file = instance.instance_log_files("monomorphization").unwrap();
     //instance.dump_as_smt2(&mut file, "", false).unwrap();
 
-    inline_adts(instance);
+    // Applies `inline_adts` only when there is no polymorphic type
+    if check_no_polymorphic_type(instance) {
+        inline_adts(instance);
+    }
 }
