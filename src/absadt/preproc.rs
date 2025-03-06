@@ -852,6 +852,11 @@ struct Monomorphization<'a, 'b> {
     instance: &'a mut AbsInstance<'b>,
 }
 
+struct DTypWork {
+    name: String,
+    id: String,
+}
+
 impl<'a, 'b> Monomorphization<'a, 'b> {
     fn new(instance: &'a mut AbsInstance<'b>) -> Self {
         Self { instance }
@@ -890,6 +895,28 @@ impl<'a, 'b> Monomorphization<'a, 'b> {
         types
     }
 
+    fn trans_pt(
+        &mut self,
+        ty: &Typ,
+        map: &HashMap<(&DTyp, &dtyp::TPrmMap<Typ>), DTypWork>,
+    ) -> dtyp::PartialTyp {
+        match ty.get() {
+            typ::RTyp::Unk | typ::RTyp::Int | typ::RTyp::Real | typ::RTyp::Bool => {
+                dtyp::PartialTyp::Typ(ty.clone())
+            }
+            typ::RTyp::Array { src, tgt } => {
+                let src = self.trans_pt(src, map);
+                let tgt = self.trans_pt(tgt, map);
+                dtyp::PartialTyp::Array(Box::new(src), Box::new(tgt))
+            }
+            typ::RTyp::DTyp { dtyp, prms } => {
+                let w = map.get(&(dtyp, prms)).unwrap();
+                let prms = prms.iter().map(|x| self.trans_pt(x, map)).collect();
+                dtyp::PartialTyp::DTyp(w.name.clone(), crate::parse::Pos::default(), prms)
+            }
+        }
+    }
+
     fn define_mono_types(&mut self, types: &HashSet<(DTyp, dtyp::TPrmMap<Typ>)>) {
         //println!("define mono type: ty={}", ty);
         //println!("args:");
@@ -898,50 +925,57 @@ impl<'a, 'b> Monomorphization<'a, 'b> {
         //}
 
         let mut dtype_prm_to_dt = HashMap::new();
+        let mut name_to_dtyp = HashMap::new();
 
         // generate all the type names
         for (ty, prms) in types.iter() {
             let mut name = ty.to_string();
             // append ID
             let id = dtype_prm_to_dt.len().to_string();
-            for p in prms {
-                name += "-";
-                name += &id;
-            }
+            name += "-";
+            name += &id;
             println!("name: {name}");
-            let dt = RDTyp::new(&name);
-            dtype_prm_to_dt.insert((ty, prms), (name, dt, id));
+            let dtyp = RDTyp::new(&name);
+            dtype_prm_to_dt.insert((ty, prms), DTypWork { name, id });
+            name_to_dtyp.insert((ty, prms), dtyp);
         }
 
+        let mut new_recs = Vec::with_capacity(name_to_dtyp.len());
+
         // add the definition for each mono-dtyp
-        for ((ty, prms), (name, dt, id)) in dtype_prm_to_dt.iter() {
+        for ((ty, prms), mut new_dtyp) in name_to_dtyp.into_iter() {
+            let w = dtype_prm_to_dt.get(&(ty, prms)).unwrap();
             for (c_name, args) in ty.news.iter() {
                 println!("c_name: {c_name}");
                 let mut new_args = Vec::with_capacity(args.len());
                 for (a_name, pt) in args.iter() {
-                    let a_name_2 = format!("{}-{}", a_name, id);
+                    let a_name_2 = format!("{}-{}", a_name, w.id);
                     let t = pt.to_type(Some(prms)).unwrap();
-                    // ここから: ここPartial Typeをどう生成すればいい？
-                    /*
-                                        pub enum PartialTyp {
-                        /// Array.
-                        Array(Box<PartialTyp>, Box<PartialTyp>),
-                        /// Datatype.
-                        DTyp(String, Pos, TPrmMap<PartialTyp>),
-                        /// Concrete type.
-                        Typ(Typ),
-                        /// Type parameter.
-                        Param(TPrmIdx),
-                    }
-                    だから、DTypのときは、dtyp_prm_to_dtを参照、
-                    そうでなければ、to_typeを行う
-                    結果として
-                    */
+                    let t = self.trans_pt(&t, &dtype_prm_to_dt);
+                    new_args.push((a_name_2, t));
                 }
+                let c_name_2 = format!("{}-{}", c_name, w.id);
+                new_dtyp.add_constructor(c_name_2, new_args).unwrap();
             }
+            for (_, other) in dtype_prm_to_dt.iter() {
+                if w.name == other.name {
+                    continue;
+                }
+                new_dtyp.add_dep(other.name.clone());
+            }
+            new_recs.push(new_dtyp);
         }
+        dtyp::reset().unwrap();
+        let dtyps = dtyp::new_recs(new_recs, |_, err| {
+            println!("error: {err}");
+            err
+        })
+        .unwrap();
 
-        unimplemented!()
+        println!("defined types:");
+        for dtyp in dtyps {
+            println!("dtyp: {dtyp}");
+        }
     }
 
     // fn work_on_clause(&self, c: &AbsClause) -> AbsClause {
@@ -952,7 +986,8 @@ impl<'a, 'b> Monomorphization<'a, 'b> {
         let types = self.collect_all_types();
 
         self.define_mono_types(&types);
-        //dtyp::reset().unwrap();
+        // need to update all the terms
+
         // can be mutual recursion
         // let mut clauses = Vec::new();
         // for c in self.instance.clauses.iter() {
@@ -984,9 +1019,13 @@ pub fn work<'a>(instance: &mut AbsInstance<'a>) {
     let mut file = instance.instance_log_files("remove_neg_src").unwrap();
     instance.dump_as_smt2(&mut file, "", false).unwrap();
     remove_not_bool(instance);
+
     let mut file = instance.instance_log_files("remove_not_bool").unwrap();
+    instance.dump_as_smt2(&mut file, "", false).unwrap();
 
     monomorphization(instance);
+    let mut file = instance.instance_log_files("monomorphization").unwrap();
     instance.dump_as_smt2(&mut file, "", false).unwrap();
+
     inline_adts(instance);
 }
