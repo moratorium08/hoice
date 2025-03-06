@@ -8,7 +8,9 @@
 //!
 use super::chc::{self, *};
 use crate::common::*;
+use crate::dtyp::RDTyp;
 use crate::info::VarInfo;
+use crate::var_to::vals::of;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum Polarity {
@@ -863,17 +865,22 @@ impl<'a, 'b> Monomorphization<'a, 'b> {
                 self.work_type(tgt, map);
             }
             typ::RTyp::DTyp { dtyp, prms } => {
-                map.insert((dtyp.clone(), prms.clone()));
+                let item = (dtyp.clone(), prms.clone());
+                if map.contains(&item) {
+                    return;
+                }
+
+                map.insert(item);
                 for (_, ts) in dtyp.news.iter() {
-                    for t in ts.iter() {
-                        self.work_type(t, map);
+                    for (_, t) in ts.iter() {
+                        self.work_type(&t.to_type(Some(prms)).unwrap(), map);
                     }
                 }
             }
         }
     }
 
-    fn collect_all_types(&self) -> HashSet<Typ> {
+    fn collect_all_types(&self) -> HashSet<(DTyp, dtyp::TPrmMap<Typ>)> {
         let mut types = HashSet::new();
         for c in self.instance.clauses.iter() {
             for v in c.vars.iter() {
@@ -883,7 +890,57 @@ impl<'a, 'b> Monomorphization<'a, 'b> {
         types
     }
 
-    fn define_mono_type(&mut self, ty: &Typ) {
+    fn define_mono_types(&mut self, types: &HashSet<(DTyp, dtyp::TPrmMap<Typ>)>) {
+        //println!("define mono type: ty={}", ty);
+        //println!("args:");
+        //for p in prms.iter() {
+        //    println!("p={}", p);
+        //}
+
+        let mut dtype_prm_to_dt = HashMap::new();
+
+        // generate all the type names
+        for (ty, prms) in types.iter() {
+            let mut name = ty.to_string();
+            // append ID
+            let id = dtype_prm_to_dt.len().to_string();
+            for p in prms {
+                name += "-";
+                name += &id;
+            }
+            println!("name: {name}");
+            let dt = RDTyp::new(&name);
+            dtype_prm_to_dt.insert((ty, prms), (name, dt, id));
+        }
+
+        // add the definition for each mono-dtyp
+        for ((ty, prms), (name, dt, id)) in dtype_prm_to_dt.iter() {
+            for (c_name, args) in ty.news.iter() {
+                println!("c_name: {c_name}");
+                let mut new_args = Vec::with_capacity(args.len());
+                for (a_name, pt) in args.iter() {
+                    let a_name_2 = format!("{}-{}", a_name, id);
+                    let t = pt.to_type(Some(prms)).unwrap();
+                    // ここから: ここPartial Typeをどう生成すればいい？
+                    /*
+                                        pub enum PartialTyp {
+                        /// Array.
+                        Array(Box<PartialTyp>, Box<PartialTyp>),
+                        /// Datatype.
+                        DTyp(String, Pos, TPrmMap<PartialTyp>),
+                        /// Concrete type.
+                        Typ(Typ),
+                        /// Type parameter.
+                        Param(TPrmIdx),
+                    }
+                    だから、DTypのときは、dtyp_prm_to_dtを参照、
+                    そうでなければ、to_typeを行う
+                    結果として
+                    */
+                }
+            }
+        }
+
         unimplemented!()
     }
 
@@ -893,10 +950,10 @@ impl<'a, 'b> Monomorphization<'a, 'b> {
 
     fn work(&mut self) {
         let types = self.collect_all_types();
-        dtyp::reset().unwrap();
-        for ty in types.iter() {
-            self.define_mono_type(ty);
-        }
+
+        self.define_mono_types(&types);
+        //dtyp::reset().unwrap();
+        // can be mutual recursion
         // let mut clauses = Vec::new();
         // for c in self.instance.clauses.iter() {
         //     clauses.push(self.work_on_clause(c));
@@ -928,6 +985,8 @@ pub fn work<'a>(instance: &mut AbsInstance<'a>) {
     instance.dump_as_smt2(&mut file, "", false).unwrap();
     remove_not_bool(instance);
     let mut file = instance.instance_log_files("remove_not_bool").unwrap();
+
+    monomorphization(instance);
     instance.dump_as_smt2(&mut file, "", false).unwrap();
     inline_adts(instance);
 }
