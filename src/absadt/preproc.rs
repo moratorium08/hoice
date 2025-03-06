@@ -986,7 +986,9 @@ impl<'a, 'b> Monomorphization<'a, 'b> {
         let types = self.collect_all_types();
 
         self.define_mono_types(&types);
-        // need to update all the terms
+        // things that are not completed
+        // - transform all the terms that use old constructors to the new constructors (we need to know which concrete type is used?)
+        // - update all the predicates (vars)
 
         // can be mutual recursion
         // let mut clauses = Vec::new();
@@ -1009,6 +1011,7 @@ impl<'a, 'b> Monomorphization<'a, 'b> {
     }
 }
 
+#[allow(dead_code)]
 fn monomorphization<'a>(instance: &mut AbsInstance<'a>) {
     let mut mono = Monomorphization::new(instance);
     mono.work();
@@ -1023,9 +1026,9 @@ pub fn work<'a>(instance: &mut AbsInstance<'a>) {
     let mut file = instance.instance_log_files("remove_not_bool").unwrap();
     instance.dump_as_smt2(&mut file, "", false).unwrap();
 
-    monomorphization(instance);
-    let mut file = instance.instance_log_files("monomorphization").unwrap();
-    instance.dump_as_smt2(&mut file, "", false).unwrap();
+    //monomorphization(instance);
+    //let mut file = instance.instance_log_files("monomorphization").unwrap();
+    //instance.dump_as_smt2(&mut file, "", false).unwrap();
 
     inline_adts(instance);
 }
