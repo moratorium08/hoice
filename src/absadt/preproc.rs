@@ -1083,18 +1083,14 @@ fn monomorphization<'a>(instance: &mut AbsInstance<'a>) {
     mono.work();
 }
 
-// fn check_no_polymorphic_type(instance: &mut AbsInstance) -> bool {
-//     for (_, d) in dtyp::get_all().iter() {
-//         if d.prms.len() > 0 {
-//             return false;
-//         }
-//         let mut visited = HashSet::new();
-//         if check_inductive_dtyp(d, &mut visited) {
-//             return false;
-//         }
-//     }
-//     true
-// }
+fn check_no_polymorphic_type() -> bool {
+    for (_, d) in dtyp::get_all().iter() {
+        if d.prms.len() > 0 {
+            return false;
+        }
+    }
+    true
+}
 
 pub fn work<'a>(instance: &mut AbsInstance<'a>) {
     remove_neg_src_tst(instance);
@@ -1110,5 +1106,7 @@ pub fn work<'a>(instance: &mut AbsInstance<'a>) {
     //instance.dump_as_smt2(&mut file, "", false).unwrap();
 
     // Applies `inline_adts` only when there is no polymorphic type
-    inline_adts(instance);
+    if check_no_polymorphic_type() {
+        inline_adts(instance);
+    }
 }
