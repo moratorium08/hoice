@@ -585,9 +585,76 @@ struct InlineTuple<'a, 'b> {
     typ2tuple: HashMap<DTyp, Vec<Typ>>,
 }
 
+/// Checks if the given partial typ is inductive
+fn check_inductive_partial_typ(pt: &dtyp::PartialTyp, visited: &mut HashSet<DTyp>) -> bool {
+    match pt {
+        dtyp::PartialTyp::Array(p1, p2) => {
+            check_inductive_partial_typ(p1, visited) && check_inductive_partial_typ(p2, visited)
+        }
+        dtyp::PartialTyp::DTyp(dty, _, tprm_map) => {
+            assert!(tprm_map.is_empty());
+            let dty = dtyp::get(&dty).unwrap();
+            check_inductive_dtyp(&dty, visited)
+        }
+        dtyp::PartialTyp::Typ(ty) => check_inductive_ty(ty, visited),
+        dtyp::PartialTyp::Param(_) => {
+            unreachable!()
+        }
+    }
+}
+
+fn check_inductive_ty(ty: &Typ, visited: &mut HashSet<DTyp>) -> bool {
+    match ty.get() {
+        typ::RTyp::Unk | typ::RTyp::Int | typ::RTyp::Real | typ::RTyp::Bool => false,
+        typ::RTyp::Array { src, tgt } => {
+            check_inductive_ty(src, visited) && check_inductive_ty(tgt, visited)
+        }
+        typ::RTyp::DTyp { dtyp, prms } => {
+            assert_eq!(prms.len(), 0);
+            if visited.contains(dtyp) {
+                return true;
+            }
+            visited.insert(dtyp.clone());
+            check_inductive_dtyp(dtyp, visited);
+            visited.remove(dtyp)
+        }
+    }
+}
+
+/// Checks if the given dtyp is inductive
+fn check_inductive_dtyp(typ: &DTyp, visited: &mut HashSet<DTyp>) -> bool {
+    if visited.contains(typ) {
+        return true;
+    }
+    visited.insert(typ.clone());
+    for (_, typs) in typ.news.iter() {
+        for (_, pt) in typs {
+            match pt {
+                dtyp::PartialTyp::Array(partial_typ1, partial_typ2) => {
+                    if check_inductive_partial_typ(partial_typ1, visited) {
+                        return true;
+                    }
+                    if !check_inductive_partial_typ(partial_typ2, visited) {
+                        return true;
+                    }
+                }
+                dtyp::PartialTyp::DTyp(ty_name, _, tprm_map) => {
+                    assert!(tprm_map.is_empty());
+                    let dty = dtyp::get(ty_name).unwrap();
+                    check_inductive_dtyp(&dty, visited);
+                }
+                dtyp::PartialTyp::Typ(ty) => {
+                    check_inductive_ty(ty, visited);
+                }
+                dtyp::PartialTyp::Param(_) => unreachable!(),
+            }
+        }
+    }
+    assert!(visited.remove(typ));
+    false
+}
+
 /// Check if the given type is a tuple.
-///
-/// Currently, very conservative. A tuple is composed of multiple items of base types.
 fn tuple_opt(typ: &DTyp) -> Option<Vec<Typ>> {
     let mut itr = typ.news.iter();
     let types = if let Some((_, t)) = itr.next() {
@@ -598,13 +665,10 @@ fn tuple_opt(typ: &DTyp) -> Option<Vec<Typ>> {
     } else {
         return None;
     };
-    let mut vec = Vec::with_capacity(types.len());
-    for (_, t) in types.iter() {
-        match t {
-            dtyp::PartialTyp::Typ(t) if t.is_bool() || t.is_arith() => vec.push(t.clone()),
-            _ => return None,
-        }
-    }
+    let vec = types
+        .iter()
+        .map(|(_, t)| t.to_type(None).unwrap())
+        .collect();
     Some(vec)
 }
 
@@ -1019,14 +1083,18 @@ fn monomorphization<'a>(instance: &mut AbsInstance<'a>) {
     mono.work();
 }
 
-fn check_no_polymorphic_type(instance: &mut AbsInstance) -> bool {
-    for (_, d) in dtyp::get_all().iter() {
-        if d.prms.len() > 0 {
-            return false;
-        }
-    }
-    true
-}
+// fn check_no_polymorphic_type(instance: &mut AbsInstance) -> bool {
+//     for (_, d) in dtyp::get_all().iter() {
+//         if d.prms.len() > 0 {
+//             return false;
+//         }
+//         let mut visited = HashSet::new();
+//         if check_inductive_dtyp(d, &mut visited) {
+//             return false;
+//         }
+//     }
+//     true
+// }
 
 pub fn work<'a>(instance: &mut AbsInstance<'a>) {
     remove_neg_src_tst(instance);
@@ -1042,7 +1110,5 @@ pub fn work<'a>(instance: &mut AbsInstance<'a>) {
     //instance.dump_as_smt2(&mut file, "", false).unwrap();
 
     // Applies `inline_adts` only when there is no polymorphic type
-    if check_no_polymorphic_type(instance) {
-        inline_adts(instance);
-    }
+    inline_adts(instance);
 }
