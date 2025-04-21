@@ -6,6 +6,8 @@
 //!     - better solution: introduce a new predicate that expresses the dis-equality on each data type,
 //!       which is introduced by Kostyukov et al.
 //!
+use lexpr::print;
+
 use super::chc::{self, *};
 use crate::common::*;
 use crate::dtyp::RDTyp;
@@ -675,13 +677,14 @@ fn tuple_opt(typ: &DTyp) -> Option<Vec<Typ>> {
 impl<'a, 'b> InlineTuple<'a, 'b> {
     fn new(instance: &'a mut AbsInstance<'b>) -> Res<Self> {
         let mut typ2tup = HashMap::new(); // O(n) is OK
-        for (_, typ) in dtyp::get_all().iter() {
+        for (type_name, typ) in dtyp::get_all().iter() {
             match tuple_opt(typ) {
                 Some(types) => {
+                    log_info!("{} is a tuple", type_name);
                     typ2tup.insert(typ.clone(), types);
                 }
                 None => {
-                    bail!("unsupported type: {}", typ);
+                    log_info!("unsupported type: {}", typ);
                 }
             }
         }
@@ -723,13 +726,17 @@ impl<'a, 'b> InlineTuple<'a, 'b> {
             }
             RTerm::Cst(c) => match c.get() {
                 val::RVal::DTypNew { typ, args, .. } => {
-                    if self.get_tuple(typ).is_none() {
-                        bail!("not supported")
-                    }
-                    let res: VarMap<_> = args.iter().map(|arg| term::cst(arg.clone())).collect();
+                    let res = match self.get_tuple(typ) {
+                        Some(types) => {
+                            let res: VarMap<_> =
+                                args.iter().map(|arg| term::cst(arg.clone())).collect();
+                            res
+                        }
+                        None => bail!("non tuple appears"),
+                    };
                     Ok(res)
                 }
-                _ => bail!("not supported"),
+                _ => bail!("not supported const: {}", c),
             },
             x => {
                 panic!("unexpected term: {}", x);
@@ -753,7 +760,7 @@ impl<'a, 'b> InlineTuple<'a, 'b> {
                 }
             }
             RTerm::App { op, args, .. } => {
-                if op == &Op::AdtEql {
+                if op == &Op::AdtEql && self.get_tuple(&args[0].typ()).is_some() {
                     assert!(args.len() == 2);
                     let lhs = self.tuple_term(varmap, &args[0])?;
                     let rhs = self.tuple_term(varmap, &args[1])?;
@@ -773,8 +780,7 @@ impl<'a, 'b> InlineTuple<'a, 'b> {
                 }
             }
             RTerm::DTypNew { typ, .. } => {
-                assert!(self.get_tuple(typ).is_none());
-                bail!("not supported");
+                bail!("not supported dtypenew: {}", t);
                 // let args = args
                 //     .iter()
                 //     .map(|t| self.term(varmap, t))
@@ -865,7 +871,17 @@ impl<'a, 'b> InlineTuple<'a, 'b> {
         Ok(c)
     }
     fn expand_tuple(&mut self) -> Res<()> {
-        // 0. redefine each predicate
+        // 1. redefine all the data types
+        // TupiList = Nil | Cons (head Tupi) (TupiList)
+        // and Tupi = (fst int, snd int)
+        // is replaced with
+        // TupiList = Nil | Cons (head-1 int) (head-2 int) (TupiList)
+        // TODO: Implement this
+        // for (name, dty) in dtyp::get_all().iter() {
+
+        // }
+
+        // 2. redefine each predicate
         let mut new_preds = PrdMap::new();
         for p in self.instance.preds.iter() {
             let mut new_sigs = VarMap::new();
@@ -885,7 +901,7 @@ impl<'a, 'b> InlineTuple<'a, 'b> {
             new_preds.push(p);
         }
         let mut new_clauses = Vec::new();
-        // 1. iter all the clauses
+        // 3. iter all the clauses
         for c in self.instance.clauses.iter() {
             let c = self.work_on(c)?;
             new_clauses.push(c);
@@ -896,11 +912,15 @@ impl<'a, 'b> InlineTuple<'a, 'b> {
     }
 }
 
-/// Assumption: AdtEql is introduced for all the equality on data types
+/// Assumption:
+/// 1. AdtEql is introduced for all the equality on data types
+/// 2. No polymorphic types are used
 fn inline_adts<'a>(instance: &mut AbsInstance<'a>) {
-    let res = InlineTuple::new(instance).map(|mut trans| trans.expand_tuple());
+    let res = InlineTuple::new(instance).and_then(|mut trans| trans.expand_tuple());
     match res {
-        Ok(_) => {}
+        Ok(_) => {
+            log_info!("Expanded tuples");
+        }
         Err(e) => {
             log_info!("Failed to expand tuples: {}", e);
         }
