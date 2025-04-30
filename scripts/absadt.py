@@ -15,8 +15,13 @@ class AbsAdt(Benchmarker):
         return 'cargo build --release'
     
     def gen_cmd(self, file: str):
-        print('file', file)
-        return f'../target/release/hoice {file}'
+        result_opt = ""
+        if self.results is not None:
+            r = self.results + "/" + file.split("/")[-1]
+            result_opt = f"--out_dir={r} --log_smt=on --log_preproc=on"
+        cmd = f'../target/release/hoice {result_opt} {file}'
+        print(cmd)
+        return cmd
       
     def parse_stdout(self, stdout):
       result_data = dict()
@@ -35,6 +40,12 @@ class AbsAdt(Benchmarker):
     
     def base_dir(self):
         return '/home/katsura/github.com/moratorium08/hopdr/hopdr/benchmark'
+    def cli_arg(self, parser):
+        parser.add_argument("--results", default=None)
+        return parser
 
+    def fix_cfg(self, cfg, args):
+        self.results = args.results
+        return cfg
 
 do_bench(AbsAdt())
